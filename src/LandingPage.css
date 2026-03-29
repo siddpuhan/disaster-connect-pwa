@@ -1,6 +1,6 @@
 /* Color Palette & Variables */
 :root {
-  --bg-dark: #0F172A;
+  --bg-dark: #000000;
   --surface: #1E293B;
   --border: #334155;
   --accent-orange: #F97316;
@@ -458,7 +458,7 @@
   text-align: center;
   padding: 60px 20px;
   border-top: 1px solid var(--border);
-  background: rgba(15, 23, 42, 0.8);
+  background: rgba(0, 0, 0, 0.8);
   position: relative;
   z-index: 1;
 }
