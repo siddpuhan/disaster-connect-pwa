@@ -1,7 +1,10 @@
 import React from 'react';
 import './LandingPage.css';
+import { useOnlineStatus } from './hooks/useOnlineStatus';
 
-const LandingPage = ({ onEnterChat }) => {
+const LandingPage = ({ onEnterChat, onEnterResources }) => {
+  const isOnline = useOnlineStatus();
+
   return (
     <div className="landing-wrapper">
       {/* Background patterns */}
@@ -23,12 +26,12 @@ const LandingPage = ({ onEnterChat }) => {
           
           <div className="hero-actions">
             <button className="btn-primary pulse" onClick={onEnterChat}>Request Help</button>
-            <button className="btn-secondary" onClick={onEnterChat}>Offer Help</button>
+            <button className="btn-secondary" onClick={onEnterResources}>Offer Help</button>
           </div>
           
-          <div className="status-pill">
+          <div className={`status-pill ${isOnline ? 'online' : 'offline'}`}>
             <span className="status-dot"></span>
-            Service Worker Active — App works offline
+            {isOnline ? 'Online — Syncing enabled' : 'Offline — P2P mode active'}
           </div>
         </div>
       </header>

@@ -4,6 +4,7 @@ import { addMessage, getAllMessages } from './db';
 import MessageBubble from './MessageBubble';
 import './App.css';
 import LandingPage from './LandingPage';
+import ResourceBoard from './ResourceBoard';
 
 const CURRENT_USER_ID = 'You';
 
@@ -11,26 +12,26 @@ const CURRENT_USER_ID = 'You';
 function App() {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
-  const [showChat, setShowChat] = useState(false); // Landing page state
+  const [currentScreen, setCurrentScreen] = useState('landing');
   const messageListRef = useRef(null);
 
 
   useEffect(() => {
-    if (showChat) {
+    if (currentScreen === 'chat') {
       async function fetchMessages() {
         const allMessages = await getAllMessages();
         setMessages(allMessages);
       }
       fetchMessages();
     }
-  }, [showChat]);
+  }, [currentScreen]);
 
 
   useEffect(() => {
-    if (showChat && messageListRef.current) {
+    if (currentScreen === 'chat' && messageListRef.current) {
       messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
     }
-  }, [messages, showChat]);
+  }, [messages, currentScreen]);
 
 
   const handleSendMessage = async (e) => {
@@ -69,11 +70,22 @@ function App() {
     }
   };
 
-  // Landing page UI
-  if (!showChat) {
-    return <LandingPage onEnterChat={() => setShowChat(true)} />;
+  // Landing page
+  if (currentScreen === 'landing') {
+    return (
+      <LandingPage
+        onEnterChat={() => setCurrentScreen('chat')}
+        onEnterResources={() => setCurrentScreen('resources')}
+      />
+    );
   }
 
+  // Resource board
+  if (currentScreen === 'resources') {
+    return <ResourceBoard onBack={() => setCurrentScreen('landing')} />;
+  }
+
+  // Chat UI
   return (
     <div className="app-container">
       <header className="header">
