@@ -39,6 +39,23 @@ io.on("connection", (socket) => {
   socket.on("send_message", (messageData) => {
     io.emit("receive_message", messageData);
   });
+
+  socket.on("join-room", (roomId) => {
+    socket.join(roomId);
+    socket.to(roomId).emit("peer-joined", { roomId });
+  });
+
+  socket.on("offer", ({ roomId, offer }) => {
+    socket.to(roomId).emit("offer", { roomId, offer });
+  });
+
+  socket.on("answer", ({ roomId, answer }) => {
+    socket.to(roomId).emit("answer", { roomId, answer });
+  });
+
+  socket.on("ice-candidate", ({ roomId, candidate }) => {
+    socket.to(roomId).emit("ice-candidate", { roomId, candidate });
+  });
 });
 
 const startServer = async () => {
