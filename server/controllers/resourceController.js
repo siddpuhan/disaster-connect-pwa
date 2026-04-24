@@ -4,15 +4,18 @@ export const createResource = async (req, res) => {
   try {
     const { type, category, description } = req.body;
 
-    if (!type || !category || !description) {
+    const trimmedType = typeof type === 'string' ? type.trim().toLowerCase() : '';
+    const trimmedCategory = typeof category === 'string' ? category.trim().toLowerCase() : '';
+    const trimmedDescription = typeof description === 'string' ? description.trim() : '';
+
+    if (!trimmedType || !trimmedCategory || !trimmedDescription) {
       return res.status(400).json({
         success: false,
-        message: "type, category and description are required",
+        message: 'type, category and description are required',
       });
     }
 
-    const normalizedType = String(type).toLowerCase();
-    if (!["need", "offer"].includes(normalizedType)) {
+    if (!['need', 'offer'].includes(trimmedType)) {
       return res.status(400).json({
         success: false,
         message: "type must be either 'need' or 'offer'",
@@ -21,16 +24,12 @@ export const createResource = async (req, res) => {
 
     const db = getDB();
     const insertResource = db.prepare(
-      "INSERT INTO resources (type, category, description) VALUES (?, ?, ?)"
+      'INSERT INTO resources (type, category, description) VALUES (?, ?, ?)'
     );
-    const result = insertResource.run(
-      normalizedType,
-      String(category).toLowerCase().trim(),
-      description
-    );
+    const result = insertResource.run(trimmedType, trimmedCategory, trimmedDescription);
     const newResource = db
       .prepare(
-        "SELECT id, type, category, description, createdAt FROM resources WHERE id = ?"
+        'SELECT id, type, category, description, createdAt FROM resources WHERE id = ?'
       )
       .get(result.lastInsertRowid);
 
@@ -38,7 +37,7 @@ export const createResource = async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "Failed to create resource",
+      message: 'Failed to create resource',
       error: error.message,
     });
   }

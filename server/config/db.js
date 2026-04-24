@@ -18,7 +18,7 @@ const connectDB = async () => {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         text TEXT NOT NULL,
         sender TEXT DEFAULT 'Anonymous',
-        timestamp TEXT DEFAULT CURRENT_TIMESTAMP
+        timestamp TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
       );
 
       CREATE TABLE IF NOT EXISTS resources (
@@ -26,7 +26,7 @@ const connectDB = async () => {
         type TEXT NOT NULL CHECK(type IN ('need', 'offer')),
         category TEXT NOT NULL,
         description TEXT NOT NULL,
-        createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+        createdAt TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
       );
     `);
 

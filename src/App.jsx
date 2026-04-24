@@ -10,7 +10,7 @@ import LandingPage from './LandingPage';
 import ResourceBoard from './ResourceBoard';
 
 const CURRENT_USER_ID = 'You';
-const SOCKET_URL = 'http://localhost:5000';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin.replace(/:\d+$/, ':5000');
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   {
@@ -442,9 +442,13 @@ function ChatPage() {
     if (newMessage.trim() === '') return;
 
     const textToSend = newMessage.trim();
-    const clientId = `client-${Date.now()}`;
+    const clientId = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const tempMessage = {
-      id: `temp-${Date.now()}`,
+      id: typeof crypto !== 'undefined' && crypto.randomUUID
+        ? `temp-${crypto.randomUUID()}`
+        : `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       clientId,
       text: textToSend,
       timestamp: new Date().toISOString(),
@@ -489,14 +493,6 @@ function ChatPage() {
         return alreadyExists ? withoutTemp : [...withoutTemp, { ...savedMessage, clientId }];
       });
       socketRef.current?.emit('send_message', savedMessage);
-
-      fetchMessagesApi()
-        .then((allMessages) => {
-          setMessages((prevMessages) => mergeServerWithPending(allMessages, prevMessages));
-        })
-        .catch((syncError) => {
-          console.error('Error syncing messages after send:', syncError);
-        });
     } catch (error) {
       console.error('Error sending message:', error);
       queueOfflineMessage({
