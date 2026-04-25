@@ -24,3 +24,11 @@ dist-ssr
 *.sw?
 
 .vercel
+
+# Local backend SQLite files
+server/database.db
+server/database.db-shm
+server/database.db-wal
+
+# Local backend environment (do not commit real config)
+server/.env
