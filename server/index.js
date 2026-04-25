@@ -76,6 +76,14 @@ const sanitizeMessagePayload = (messageData) => {
     sanitized.id = messageData.id;
   }
 
+  if (typeof messageData.clientId === "string") {
+    sanitized.clientId = messageData.clientId;
+  }
+
+  if (typeof messageData.status === "string") {
+    sanitized.status = messageData.status;
+  }
+
   if (typeof messageData.timestamp === "string") {
     sanitized.timestamp = messageData.timestamp;
   }
@@ -96,7 +104,15 @@ io.on("connection", (socket) => {
       socket.emit("message_error", { error: "Message payload must include a non-empty 'text' or 'content' field" });
       return;
     }
+    sanitized.senderSocketId = socket.id;
     io.emit("receive_message", sanitized);
+  });
+
+  socket.on("message-delivered", ({ clientId, senderSocketId }) => {
+    if (!clientId || !senderSocketId) {
+      return;
+    }
+    io.to(senderSocketId).emit("message-delivered", { clientId });
   });
 
   socket.on("join-room", (roomId) => {

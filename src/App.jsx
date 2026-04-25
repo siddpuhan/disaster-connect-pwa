@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import MessageBubble from './MessageBubble';
+import AnimatedBackground from './AnimatedBackground';
 import { fetchMessagesApi, sendMessageApi } from './api/messagesApi';
 import { clearOfflineMessages, getOfflineMessages, queueOfflineMessage, saveOfflineMessages } from './utils/offlineSync';
 import './App.css';
@@ -52,6 +53,15 @@ const addMessageIfMissing = (currentMessages, incomingMessage) => {
   return [...currentMessages, incomingMessage];
 };
 
+const markMessageStatus = (currentMessages, clientId, status) =>
+  currentMessages.map((msg) => (msg.clientId === clientId ? { ...msg, status } : msg));
+
+const updateMode = (connectionState, online) => {
+  if (!online) return 'offline';
+  if (connectionState === 'connected') return 'webrtc';
+  return 'server';
+};
+
 
 function App() {
   const navigate = useNavigate();
@@ -73,12 +83,28 @@ function App() {
   );
 }
 
+const StatusBadge = ({ mode }) => {
+  const badge = {
+    webrtc: { text: 'WebRTC Connected', color: 'green' },
+    server: { text: 'Server Mode', color: 'yellow' },
+    offline: { text: 'Offline Mode', color: 'red' },
+  }[mode];
+
+  return (
+    <div className={`status-badge ${badge.color}`}>
+      <span className="status-dot"></span>
+      {badge.text}
+    </div>
+  );
+};
+
 function ChatPage() {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [messageError, setMessageError] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [mode, setMode] = useState(navigator.onLine ? 'server' : 'offline');
   const [chatMode, setChatMode] = useState('server');
   const [roomInput, setRoomInput] = useState('');
   const [activeRoom, setActiveRoom] = useState('');
@@ -104,6 +130,10 @@ function ChatPage() {
     chatModeRef.current = chatMode;
   }, [chatMode]);
 
+  useEffect(() => {
+    console.log('navigator.onLine (initial):', navigator.onLine);
+  }, []);
+
   const setDataChannelHandlers = (channel) => {
     dataChannelRef.current = channel;
 
@@ -123,11 +153,46 @@ function ChatPage() {
 
     channel.onmessage = (event) => {
       console.log('DataChannel message received:', event.data);
+
+      try {
+        const parsed = JSON.parse(event.data);
+
+        if (parsed?.type === 'ack' && parsed?.clientId) {
+          setMessages((prevMessages) => markMessageStatus(prevMessages, parsed.clientId, 'delivered'));
+          return;
+        }
+
+        if (parsed?.type === 'chat-message') {
+          const incomingMessage = {
+            id: `rtc-peer-${Date.now()}-${Math.random()}`,
+            clientId: parsed.clientId,
+            text: parsed.text,
+            sender: parsed.sender || 'Peer',
+            timestamp: parsed.timestamp || new Date().toISOString(),
+            status: 'delivered',
+          };
+          setMessages((prevMessages) => addMessageIfMissing(prevMessages, incomingMessage));
+
+          if (parsed.clientId && dataChannelRef.current?.readyState === 'open') {
+            dataChannelRef.current.send(
+              JSON.stringify({
+                type: 'ack',
+                clientId: parsed.clientId,
+              })
+            );
+          }
+          return;
+        }
+      } catch {
+        // Backward compatibility for plain text payloads.
+      }
+
       const incomingMessage = {
         id: `rtc-peer-${Date.now()}-${Math.random()}`,
         text: event.data,
         sender: 'Peer',
         timestamp: new Date().toISOString(),
+        status: 'delivered',
       };
       setMessages((prevMessages) => addMessageIfMissing(prevMessages, incomingMessage));
     };
@@ -179,9 +244,11 @@ function ChatPage() {
       console.log('STATE:', peerConnection.connectionState);
       if (peerConnection.connectionState === 'connected') {
         setRtcStatus('Connected');
+        setMode(updateMode(peerConnection.connectionState, navigator.onLine));
       }
       if (peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'failed') {
         setRtcStatus('Disconnected');
+        setMode(updateMode(peerConnection.connectionState, navigator.onLine));
       }
     };
 
@@ -238,8 +305,27 @@ function ChatPage() {
 
     socket.on('receive_message', (incomingMessage) => {
       if (chatModeRef.current === 'server') {
-        setMessages((prevMessages) => addMessageIfMissing(prevMessages, incomingMessage));
+        setMessages((prevMessages) =>
+          addMessageIfMissing(prevMessages, {
+            ...incomingMessage,
+            status: incomingMessage.status || 'delivered',
+          })
+        );
+
+        if ((incomingMessage.sender || incomingMessage.author) !== CURRENT_USER_ID && incomingMessage.clientId) {
+          socket.emit('message-delivered', {
+            clientId: incomingMessage.clientId,
+            senderSocketId: incomingMessage.senderSocketId,
+          });
+        }
       }
+    });
+
+    socket.on('message-delivered', ({ clientId }) => {
+      if (!clientId) {
+        return;
+      }
+      setMessages((prevMessages) => markMessageStatus(prevMessages, clientId, 'delivered'));
     });
 
     socket.on('peer-joined', async ({ roomId }) => {
@@ -323,6 +409,7 @@ function ChatPage() {
 
     return () => {
       socket.off('receive_message');
+      socket.off('message-delivered');
       socket.off('peer-joined');
       socket.off('offer');
       socket.off('answer');
@@ -349,17 +436,51 @@ function ChatPage() {
 
 
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
+    const goOnline = () => {
+      console.log('ONLINE EVENT');
+      console.log('navigator.onLine:', navigator.onLine);
+      setIsOnline(true);
+    };
+    const goOffline = () => {
+      console.log('OFFLINE EVENT');
+      console.log('navigator.onLine:', navigator.onLine);
+      setIsOnline(false);
+    };
 
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
 
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
     };
   }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!navigator.onLine) {
+        console.log('Polling detected offline; navigator.onLine:', navigator.onLine);
+        setIsOnline(false);
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!isOnline) {
+      console.log('Switching to OFFLINE mode');
+      setMode('offline');
+      return;
+    }
+
+    const connectionState = peerConnectionRef.current?.connectionState;
+    setMode(updateMode(connectionState, isOnline));
+  }, [isOnline]);
+
+  useEffect(() => {
+    console.log('MODE CHANGED:', mode);
+  }, [mode]);
 
 
   useEffect(() => {
@@ -400,12 +521,16 @@ function ChatPage() {
       for (const queuedMessage of queuedMessages) {
         try {
           const savedMessage = await sendMessageApi(queuedMessage.text, queuedMessage.sender);
-          socketRef.current?.emit('send_message', savedMessage);
+          socketRef.current?.emit('send_message', {
+            ...savedMessage,
+            clientId: queuedMessage.clientId,
+            status: 'sent',
+          });
 
           setMessages((prevMessages) =>
             prevMessages.map((msg) =>
               msg.clientId === queuedMessage.clientId
-                ? { ...savedMessage, clientId: queuedMessage.clientId }
+                ? { ...savedMessage, clientId: queuedMessage.clientId, status: 'sent' }
                 : msg
             )
           );
@@ -455,57 +580,70 @@ function ChatPage() {
       timestamp: new Date().toISOString(),
       sender: CURRENT_USER_ID,
       pending: !isOnline,
+      status: mode === 'offline' ? 'pending' : 'sending',
     };
 
     setMessages((prevMessages) => [...prevMessages, tempMessage]);
     setNewMessage('');
     setMessageError('');
 
-    if (chatMode === 'webrtc') {
-      if (dataChannelRef.current?.readyState === 'open') {
-        try {
-          dataChannelRef.current.send(textToSend);
-        } catch (error) {
-          console.error('Error sending WebRTC message:', error);
-          setMessageError('WebRTC send failed');
-        }
-      } else {
-        console.log('Channel not open yet');
-        setMessageError('WebRTC channel is not connected yet');
+    if (mode === 'webrtc' && dataChannelRef.current?.readyState === 'open') {
+      try {
+        dataChannelRef.current.send(
+          JSON.stringify({
+            type: 'chat-message',
+            clientId,
+            text: textToSend,
+            timestamp: tempMessage.timestamp,
+            sender: CURRENT_USER_ID,
+          })
+        );
+        setMessages((prevMessages) => markMessageStatus(prevMessages, clientId, 'sent'));
+      } catch (error) {
+        console.error('Error sending WebRTC message:', error);
+        setMessages((prevMessages) => markMessageStatus(prevMessages, clientId, 'failed'));
+        setMessageError('WebRTC send failed');
       }
-      return;
-    }
-
-    if (!isOnline) {
+    } else if (mode === 'server') {
+      try {
+        const savedMessage = await sendMessageApi(textToSend, CURRENT_USER_ID);
+        setMessages((prevMessages) => {
+          const withoutTemp = prevMessages.filter((msg) => msg.id !== tempMessage.id);
+          const alreadyExists = withoutTemp.some((msg) => msg.id === savedMessage.id);
+          return alreadyExists
+            ? withoutTemp
+            : [...withoutTemp, { ...savedMessage, clientId, status: 'sent' }];
+        });
+        socketRef.current?.emit('send_message', {
+          ...savedMessage,
+          clientId,
+          status: 'sent',
+        });
+      } catch (error) {
+        console.error('Error sending message:', error);
+        queueOfflineMessage({
+          clientId,
+          text: textToSend,
+          sender: CURRENT_USER_ID,
+          timestamp: tempMessage.timestamp,
+          status: 'pending',
+        });
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) =>
+            msg.id === tempMessage.id ? { ...msg, pending: true, status: 'failed' } : msg
+          )
+        );
+        setMessageError('Message queued offline and will sync when online');
+      }
+    } else {
       queueOfflineMessage({
         clientId,
         text: textToSend,
         sender: CURRENT_USER_ID,
         timestamp: tempMessage.timestamp,
+        status: 'pending',
       });
-      return;
-    }
-
-    try {
-      const savedMessage = await sendMessageApi(textToSend, CURRENT_USER_ID);
-      setMessages((prevMessages) => {
-        const withoutTemp = prevMessages.filter((msg) => msg.id !== tempMessage.id);
-        const alreadyExists = withoutTemp.some((msg) => msg.id === savedMessage.id);
-        return alreadyExists ? withoutTemp : [...withoutTemp, { ...savedMessage, clientId }];
-      });
-      socketRef.current?.emit('send_message', savedMessage);
-    } catch (error) {
-      console.error('Error sending message:', error);
-      queueOfflineMessage({
-        clientId,
-        text: textToSend,
-        sender: CURRENT_USER_ID,
-        timestamp: tempMessage.timestamp,
-      });
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) => (msg.id === tempMessage.id ? { ...msg, pending: true } : msg))
-      );
-      setMessageError('Message queued offline and will sync when online');
+      setMessages((prevMessages) => markMessageStatus(prevMessages, clientId, 'pending'));
     }
   };
 
@@ -583,6 +721,7 @@ function ChatPage() {
     remoteDescSetRef.current = false;
     hasSentOfferRef.current = false;
     setChatMode('server');
+    setMode(isOnline ? 'server' : 'offline');
     setActiveRoom('');
     setRtcStatus('Not connected');
 
@@ -598,66 +737,74 @@ function ChatPage() {
   };
 
   return (
-    <div className="app-container">
-      <header className="header">
-        <span>Disaster Connect</span>
-        <button onClick={simulateIncomingMessage} className="simulate-button">
+    <div className="chat-page-container">
+      <AnimatedBackground />
+      <header className="chat-header">
+        <h1>Disaster Connect</h1>
+        <button onClick={simulateIncomingMessage} className="chat-button-subtle">
           Simulate Incoming
         </button>
       </header>
-      <div className="webrtc-toolbar">
-        <input
-          type="text"
-          className="webrtc-input"
-          value={roomInput}
-          onChange={(e) => setRoomInput(e.target.value)}
-          placeholder="Room ID"
-        />
-        <button type="button" className="simulate-button" onClick={handleCreateRoom}>
-          Create Room
-        </button>
-        <button type="button" className="simulate-button" onClick={handleJoinRoom}>
-          Join Room
-        </button>
-        <button type="button" className="simulate-button" onClick={switchToServerMode}>
-          Server Mode
-        </button>
+
+      <div className="chat-controls-bar">
+        <div className="chat-controls">
+          <input
+            type="text"
+            className="chat-input-room"
+            value={roomInput}
+            onChange={(e) => setRoomInput(e.target.value)}
+            placeholder="Enter Room ID"
+          />
+          <button type="button" className="chat-button" onClick={handleCreateRoom}>
+            Create Room
+          </button>
+          <button type="button" className="chat-button" onClick={handleJoinRoom}>
+            Join Room
+          </button>
+          <button type="button" className="chat-button-secondary" onClick={switchToServerMode}>
+            Exit to Server Mode
+          </button>
+        </div>
+        <StatusBadge mode={mode} />
       </div>
-      <div className="webrtc-status">
-        Mode: {chatMode === 'webrtc' ? `WebRTC (${activeRoom || 'no room'})` : 'Server'} | Status: {rtcStatus}
-      </div>
-      <div className="message-list" ref={messageListRef}>
-        {loadingMessages ? (
-          <div className="empty-state">Loading messages...</div>
-        ) : messageError ? (
-          <div className="empty-state">{messageError}</div>
-        ) : messages.length > 0 ? (
-          messages.map((msg) => (
-            <MessageBubble
-              key={msg.id ?? `${msg.timestamp}-${msg.text}`}
-              message={msg}
-              isOwnMessage={(msg.sender || msg.author) === CURRENT_USER_ID}
-            />
-          ))
-        ) : (
-          <div className="empty-state">
-            No messages yet. Start the conversation.
+
+      <div className="chat-main-area">
+        <div className="chat-container">
+          <div className="message-list" ref={messageListRef}>
+            {loadingMessages ? (
+              <div className="empty-state">Loading messages...</div>
+            ) : messageError ? (
+              <div className="empty-state">{messageError}</div>
+            ) : messages.length > 0 ? (
+              messages.map((msg) => (
+                <MessageBubble
+                  key={msg.id ?? `${msg.timestamp}-${msg.text}`}
+                  message={msg}
+                  isOwnMessage={(msg.sender || msg.author) === CURRENT_USER_ID}
+                />
+              ))
+            ) : (
+              <div className="empty-state">
+                <h2>Welcome!</h2>
+                <p>No messages yet. Start the conversation or join a room.</p>
+              </div>
+            )}
           </div>
-        )}
+          <form className="chat-input-form" onSubmit={handleSendMessage}>
+            <input
+              type="text"
+              className="chat-input-field"
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder="Type a message..."
+            />
+            <button type="submit" className="chat-send-button" disabled={!newMessage.trim()}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            </button>
+          </form>
+        </div>
       </div>
-      <form className="input-form" onSubmit={handleSendMessage}>
-        <input
-          type="text"
-          className="input-field"
-          value={newMessage}
-          onChange={(e) => setNewMessage(e.target.value)}
-          onKeyPress={handleKeyPress}
-          placeholder="Type a message..."
-        />
-        <button type="submit" className="send-button" disabled={!newMessage.trim()}>
-          &#10148;
-        </button>
-      </form>
     </div>
   );
 }
