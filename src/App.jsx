@@ -20,6 +20,11 @@ const ICE_SERVERS = [
   },
 ];
 
+const generateUUID = () =>
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+
 const mergeServerWithPending = (serverMessages, currentMessages) => {
   const pendingMessages = currentMessages.filter(
     (msg) => typeof msg.id === 'string' && msg.id.startsWith('temp-')
@@ -442,13 +447,9 @@ function ChatPage() {
     if (newMessage.trim() === '') return;
 
     const textToSend = newMessage.trim();
-    const clientId = typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const clientId = generateUUID();
     const tempMessage = {
-      id: typeof crypto !== 'undefined' && crypto.randomUUID
-        ? `temp-${crypto.randomUUID()}`
-        : `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      id: `temp-${generateUUID()}`,
       clientId,
       text: textToSend,
       timestamp: new Date().toISOString(),

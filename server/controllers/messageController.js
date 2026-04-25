@@ -34,13 +34,13 @@ export const getMessages = async (req, res) => {
   try {
     const db = getDB();
     const messages = db
-      .prepare("SELECT id, text, sender, timestamp FROM messages ORDER BY timestamp ASC")
+      .prepare('SELECT id, text, sender, timestamp FROM messages ORDER BY timestamp ASC')
       .all();
     return res.status(200).json({ success: true, count: messages.length, data: messages });
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch messages",
+      message: 'Failed to fetch messages',
       error: error.message,
     });
   }

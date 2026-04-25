@@ -48,14 +48,14 @@ export const getResources = async (req, res) => {
     const db = getDB();
     const resources = db
       .prepare(
-        "SELECT id, type, category, description, createdAt FROM resources ORDER BY createdAt DESC"
+        'SELECT id, type, category, description, createdAt FROM resources ORDER BY createdAt DESC'
       )
       .all();
     return res.status(200).json({ success: true, count: resources.length, data: resources });
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch resources",
+      message: 'Failed to fetch resources',
       error: error.message,
     });
   }
