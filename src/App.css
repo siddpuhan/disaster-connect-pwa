@@ -41,6 +41,30 @@ body {
   cursor: pointer;
 }
 
+.webrtc-toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  background-color: #f0f2f5;
+  border-bottom: 1px solid #ddd;
+}
+
+.webrtc-input {
+  flex: 1;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.95rem;
+}
+
+.webrtc-status {
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  color: #444;
+  background-color: #f7f7f7;
+  border-bottom: 1px solid #e4e4e4;
+}
+
 .message-list {
   flex-grow: 1;
   overflow-y: auto;
