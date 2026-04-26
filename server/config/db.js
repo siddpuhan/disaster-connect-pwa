@@ -18,8 +18,17 @@ const connectDB = async () => {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         text TEXT NOT NULL,
         sender TEXT DEFAULT 'Anonymous',
+        sender_id TEXT,
+        sender_name TEXT,
         timestamp TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
       );
+    `);
+
+    // Safely add new columns to existing table
+    try { db.exec("ALTER TABLE messages ADD COLUMN sender_id TEXT;"); } catch (e) {}
+    try { db.exec("ALTER TABLE messages ADD COLUMN sender_name TEXT;"); } catch (e) {}
+
+    db.exec(`
 
       CREATE TABLE IF NOT EXISTS resources (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
