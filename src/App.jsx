@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
+import { SignedIn, SignedOut, RedirectToSignIn, useAuth, useUser, UserButton } from '@clerk/clerk-react';
 import MessageBubble from './MessageBubble';
 import AnimatedBackground from './AnimatedBackground';
 import { fetchMessagesApi, sendMessageApi } from './api/messagesApi';
@@ -77,8 +78,32 @@ function App() {
           />
         }
       />
-      <Route path="/chat" element={<ChatPage />} />
-      <Route path="/resources" element={<ResourceBoard onBack={() => navigate('/')} />} />
+      <Route 
+        path="/chat" 
+        element={
+          <>
+            <SignedIn>
+              <ChatPage />
+            </SignedIn>
+            <SignedOut>
+              <RedirectToSignIn />
+            </SignedOut>
+          </>
+        } 
+      />
+      <Route 
+        path="/resources" 
+        element={
+          <>
+            <SignedIn>
+              <ResourceBoard onBack={() => navigate('/')} />
+            </SignedIn>
+            <SignedOut>
+              <RedirectToSignIn />
+            </SignedOut>
+          </>
+        } 
+      />
     </Routes>
   );
 }
@@ -99,6 +124,21 @@ const StatusBadge = ({ mode }) => {
 };
 
 function ChatPage() {
+  const { user } = useUser();
+  const { getToken } = useAuth();
+  
+  const currentUserIdRef = useRef(null);
+  const currentUserNameRef = useRef('You');
+  const currentUserEmailRef = useRef(null);
+
+  useEffect(() => {
+    if (user) {
+      currentUserIdRef.current = user.id;
+      currentUserNameRef.current = user.fullName || user.username || user.firstName || 'You';
+      currentUserEmailRef.current = user.primaryEmailAddress?.emailAddress || null;
+    }
+  }, [user]);
+
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -491,7 +531,8 @@ function ChatPage() {
       setLoadingMessages(true);
       setMessageError('');
       try {
-        const allMessages = await fetchMessagesApi();
+        const token = await getToken();
+        const allMessages = await fetchMessagesApi(token);
         setMessages((prevMessages) => mergeServerWithPending(allMessages, prevMessages));
       } catch (error) {
         console.error('Error fetching messages:', error);
@@ -518,9 +559,15 @@ function ChatPage() {
       isSyncingOfflineRef.current = true;
       const remainingMessages = [];
 
+      const token = await getToken();
       for (const queuedMessage of queuedMessages) {
         try {
-          const savedMessage = await sendMessageApi(queuedMessage.text, queuedMessage.sender);
+          const savedMessage = await sendMessageApi(
+            queuedMessage.text,
+            queuedMessage.sender,
+            token,
+            { senderName: queuedMessage.senderName, senderEmail: queuedMessage.senderEmail }
+          );
           socketRef.current?.emit('send_message', {
             ...savedMessage,
             clientId: queuedMessage.clientId,
@@ -547,7 +594,8 @@ function ChatPage() {
       }
 
       try {
-        const allMessages = await fetchMessagesApi();
+        const token = await getToken();
+        const allMessages = await fetchMessagesApi(token);
         setMessages((prevMessages) => mergeServerWithPending(allMessages, prevMessages));
       } catch (error) {
         console.error('Error refreshing messages after offline sync:', error);
@@ -595,7 +643,9 @@ function ChatPage() {
             clientId,
             text: textToSend,
             timestamp: tempMessage.timestamp,
-            sender: CURRENT_USER_ID,
+            sender: currentUserIdRef.current || CURRENT_USER_ID,
+            senderName: currentUserNameRef.current,
+            senderEmail: currentUserEmailRef.current,
           })
         );
         setMessages((prevMessages) => markMessageStatus(prevMessages, clientId, 'sent'));
@@ -606,7 +656,13 @@ function ChatPage() {
       }
     } else if (mode === 'server') {
       try {
-        const savedMessage = await sendMessageApi(textToSend, CURRENT_USER_ID);
+        const token = await getToken();
+        const savedMessage = await sendMessageApi(
+          textToSend, 
+          currentUserIdRef.current || CURRENT_USER_ID, 
+          token, 
+          { senderName: currentUserNameRef.current, senderEmail: currentUserEmailRef.current }
+        );
         setMessages((prevMessages) => {
           const withoutTemp = prevMessages.filter((msg) => msg.id !== tempMessage.id);
           const alreadyExists = withoutTemp.some((msg) => msg.id === savedMessage.id);
@@ -741,9 +797,12 @@ function ChatPage() {
       <AnimatedBackground />
       <header className="chat-header">
         <h1>Disaster Connect</h1>
-        <button onClick={simulateIncomingMessage} className="chat-button-subtle">
-          Simulate Incoming
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <button onClick={simulateIncomingMessage} className="chat-button-subtle">
+            Simulate Incoming
+          </button>
+          <UserButton afterSignOutUrl="/" />
+        </div>
       </header>
 
       <div className="chat-controls-bar">
@@ -780,7 +839,7 @@ function ChatPage() {
                 <MessageBubble
                   key={msg.id ?? `${msg.timestamp}-${msg.text}`}
                   message={msg}
-                  isOwnMessage={(msg.sender || msg.author) === CURRENT_USER_ID}
+                  isOwnMessage={(msg.sender_id || msg.sender || msg.author) === (currentUserIdRef.current || CURRENT_USER_ID)}
                 />
               ))
             ) : (
