@@ -7,6 +7,7 @@ import { Server } from "socket.io";
 import connectDB from "./config/db.js";
 import messageRoutes from "./routes/messageRoutes.js";
 import resourceRoutes from "./routes/resourceRoutes.js";
+import { syncUser } from "./controllers/userController.js";
 
 dotenv.config();
 
@@ -34,6 +35,7 @@ app.get("/", (req, res) => {
 
 app.use("/api/messages", messageRoutes);
 app.use("/api/resources", resourceRoutes);
+app.post("/api/users/sync", syncUser);
 
 const sanitizeMessagePayload = (messageData) => {
   if (!messageData || typeof messageData !== "object" || Array.isArray(messageData)) {
