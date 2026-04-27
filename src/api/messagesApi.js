@@ -1,12 +1,13 @@
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
-export const fetchMessagesApi = async (token) => {
+export const fetchMessagesApi = async (token, roomId) => {
   const headers = {};
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${BASE_URL}/api/messages`, {
+  const queryParams = roomId ? `?roomId=${encodeURIComponent(roomId)}` : '';
+  const response = await fetch(`${BASE_URL}/api/messages${queryParams}`, {
     headers,
   });
 
@@ -22,7 +23,7 @@ export const fetchMessagesApi = async (token) => {
   return payload.data || [];
 };
 
-export const sendMessageApi = async (text, sender = 'You', token = null, userMeta = {}) => {
+export const sendMessageApi = async (text, sender_id, token = null, sender_name = 'Anonymous', room_id = null, id = null) => {
   const headers = {
     'Content-Type': 'application/json',
   };
@@ -35,10 +36,11 @@ export const sendMessageApi = async (text, sender = 'You', token = null, userMet
     method: 'POST',
     headers,
     body: JSON.stringify({ 
+      id,
       text, 
-      sender,
-      senderName: userMeta.senderName,
-      senderEmail: userMeta.senderEmail
+      sender_id,
+      sender_name,
+      room_id
     }),
   });
 

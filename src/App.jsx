@@ -11,29 +11,33 @@ import './App.css';
 import LandingPage from './LandingPage';
 import ResourceBoard from './ResourceBoard';
 
-const CURRENT_USER_ID = 'You';
+
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin.replace(/:\d+$/, ':5000');
-const ICE_SERVERS = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  {
-    urls: 'turn:openrelay.metered.ca:80',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-];
 
-const generateUUID = () =>
-  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID()
-    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
-const mergeServerWithPending = (serverMessages, currentMessages) => {
-  const pendingMessages = currentMessages.filter(
-    (msg) => typeof msg.id === 'string' && msg.id.startsWith('temp-')
-  );
-
-  return [...serverMessages, ...pendingMessages];
+const generateUUID = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
 };
+
+function mergeMessages(serverMsgs, localMsgs) {
+  const map = new Map();
+
+  serverMsgs.forEach(msg => map.set(msg.id, msg));
+  localMsgs.forEach(msg => {
+    if (!map.has(msg.id)) map.set(msg.id, msg);
+  });
+
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(a.created_at || a.timestamp) - new Date(b.created_at || b.timestamp)
+  );
+}
 
 const addMessageIfMissing = (currentMessages, incomingMessage) => {
   const duplicateById = incomingMessage.id
@@ -43,8 +47,8 @@ const addMessageIfMissing = (currentMessages, incomingMessage) => {
   const duplicateByPayload = currentMessages.some(
     (msg) =>
       msg.text === incomingMessage.text &&
-      (msg.sender || msg.author) === (incomingMessage.sender || incomingMessage.author) &&
-      msg.timestamp === incomingMessage.timestamp
+      msg.sender_id === incomingMessage.sender_id &&
+      (msg.timestamp || msg.created_at) === (incomingMessage.timestamp || incomingMessage.created_at)
   );
 
   if (duplicateById || duplicateByPayload) {
@@ -57,11 +61,7 @@ const addMessageIfMissing = (currentMessages, incomingMessage) => {
 const markMessageStatus = (currentMessages, clientId, status) =>
   currentMessages.map((msg) => (msg.clientId === clientId ? { ...msg, status } : msg));
 
-const updateMode = (connectionState, online) => {
-  if (!online) return 'offline';
-  if (connectionState === 'connected') return 'webrtc';
-  return 'server';
-};
+
 
 
 function App() {
@@ -110,10 +110,9 @@ function App() {
 
 const StatusBadge = ({ mode }) => {
   const badge = {
-    webrtc: { text: 'WebRTC Connected', color: 'green' },
-    server: { text: 'Server Mode', color: 'yellow' },
+    server: { text: 'Online Mode', color: 'green' },
     offline: { text: 'Offline Mode', color: 'red' },
-  }[mode];
+  }[mode] || { text: 'Connecting...', color: 'yellow' };
 
   return (
     <div className={`status-badge ${badge.color}`}>
@@ -128,13 +127,18 @@ function ChatPage() {
   const { getToken } = useAuth();
   
   const currentUserIdRef = useRef(null);
-  const currentUserNameRef = useRef('You');
+  const currentUserId = user?.id;
+  const currentUserNameRef = useRef('Anonymous');
   const currentUserEmailRef = useRef(null);
 
   useEffect(() => {
     if (user) {
       currentUserIdRef.current = user.id;
-      currentUserNameRef.current = user.fullName || user.username || user.firstName || 'You';
+      currentUserNameRef.current = 
+        user.fullName || 
+        user.username || 
+        user.primaryEmailAddress?.emailAddress || 
+        'Anonymous';
       currentUserEmailRef.current = user.primaryEmailAddress?.emailAddress || null;
     }
   }, [user]);
@@ -145,194 +149,31 @@ function ChatPage() {
   const [messageError, setMessageError] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [mode, setMode] = useState(navigator.onLine ? 'server' : 'offline');
-  const [chatMode, setChatMode] = useState('server');
   const [roomInput, setRoomInput] = useState('');
   const [activeRoom, setActiveRoom] = useState('');
-  const [rtcStatus, setRtcStatus] = useState('Not connected');
   const messageListRef = useRef(null);
   const socketRef = useRef(null);
   const isSyncingOfflineRef = useRef(false);
   const activeRoomRef = useRef('');
-  const chatModeRef = useRef('server');
-  const peerConnectionRef = useRef(null);
-  const dataChannelRef = useRef(null);
-  const isRoomCreatorRef = useRef(false);
-  const pendingIceCandidatesRef = useRef([]);
-  const remoteDescSetRef = useRef(false);
-  const hasSentOfferRef = useRef(false);
-  const offerTimerRef = useRef(null);
 
   useEffect(() => {
     activeRoomRef.current = activeRoom;
   }, [activeRoom]);
 
-  useEffect(() => {
-    chatModeRef.current = chatMode;
-  }, [chatMode]);
+
 
   useEffect(() => {
     console.log('navigator.onLine (initial):', navigator.onLine);
   }, []);
 
-  const setDataChannelHandlers = (channel) => {
-    dataChannelRef.current = channel;
-
-    channel.onopen = () => {
-      console.log('OPEN');
-      console.log('DataChannel open');
-      setRtcStatus('Connected');
-    };
-
-    channel.onclose = () => {
-      setRtcStatus('Disconnected');
-    };
-
-    channel.onerror = (error) => {
-      console.error('Data channel error:', error);
-    };
-
-    channel.onmessage = (event) => {
-      console.log('DataChannel message received:', event.data);
-
-      try {
-        const parsed = JSON.parse(event.data);
-
-        if (parsed?.type === 'ack' && parsed?.clientId) {
-          setMessages((prevMessages) => markMessageStatus(prevMessages, parsed.clientId, 'delivered'));
-          return;
-        }
-
-        if (parsed?.type === 'chat-message') {
-          const incomingMessage = {
-            id: `rtc-peer-${Date.now()}-${Math.random()}`,
-            clientId: parsed.clientId,
-            text: parsed.text,
-            sender: parsed.sender || 'Peer',
-            timestamp: parsed.timestamp || new Date().toISOString(),
-            status: 'delivered',
-          };
-          setMessages((prevMessages) => addMessageIfMissing(prevMessages, incomingMessage));
-
-          if (parsed.clientId && dataChannelRef.current?.readyState === 'open') {
-            dataChannelRef.current.send(
-              JSON.stringify({
-                type: 'ack',
-                clientId: parsed.clientId,
-              })
-            );
-          }
-          return;
-        }
-      } catch {
-        // Backward compatibility for plain text payloads.
-      }
-
-      const incomingMessage = {
-        id: `rtc-peer-${Date.now()}-${Math.random()}`,
-        text: event.data,
-        sender: 'Peer',
-        timestamp: new Date().toISOString(),
-        status: 'delivered',
-      };
-      setMessages((prevMessages) => addMessageIfMissing(prevMessages, incomingMessage));
-    };
-  };
-
-  const flushPendingIceCandidates = async (peerConnection) => {
-    if (pendingIceCandidatesRef.current.length === 0) {
-      return;
+  useEffect(() => {
+    const savedRoom = localStorage.getItem("roomId");
+    if (savedRoom) {
+      setRoomInput(savedRoom);
+      setActiveRoom(savedRoom);
+      activeRoomRef.current = savedRoom;
     }
-
-    const queued = [...pendingIceCandidatesRef.current];
-    pendingIceCandidatesRef.current = [];
-
-    for (const candidate of queued) {
-      try {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-        console.log('ICE added from queue');
-        console.log('ICE candidate applied from queue');
-      } catch (error) {
-        console.error('Error applying queued ICE candidate:', error);
-      }
-    }
-  };
-
-  const setupPeerConnection = () => {
-    if (peerConnectionRef.current) {
-      return peerConnectionRef.current;
-    }
-
-    const peerConnection = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-    console.log('RTCPeerConnection created');
-
-    peerConnection.onicecandidate = (event) => {
-      if (event.candidate && activeRoomRef.current) {
-        console.log('ICE sent');
-        socketRef.current?.emit('ice-candidate', {
-          roomId: activeRoomRef.current,
-          candidate: event.candidate,
-        });
-      }
-    };
-
-    peerConnection.ondatachannel = (event) => {
-      setDataChannelHandlers(event.channel);
-    };
-
-    peerConnection.onconnectionstatechange = () => {
-      console.log('Connection state change');
-      console.log('STATE:', peerConnection.connectionState);
-      if (peerConnection.connectionState === 'connected') {
-        setRtcStatus('Connected');
-        setMode(updateMode(peerConnection.connectionState, navigator.onLine));
-      }
-      if (peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'failed') {
-        setRtcStatus('Disconnected');
-        setMode(updateMode(peerConnection.connectionState, navigator.onLine));
-      }
-    };
-
-    peerConnection.oniceconnectionstatechange = () => {
-      console.log('ICE state change:', peerConnection.iceConnectionState);
-    };
-
-    peerConnectionRef.current = peerConnection;
-    return peerConnection;
-  };
-
-  const createDataChannel = () => {
-    const peerConnection = setupPeerConnection();
-    const channel = peerConnection.createDataChannel('chat');
-    console.log('DataChannel created by creator side');
-    setDataChannelHandlers(channel);
-  };
-
-  const startOfferFlow = async (roomId) => {
-    if (!isRoomCreatorRef.current || hasSentOfferRef.current) {
-      return;
-    }
-
-    try {
-      const peerConnection = setupPeerConnection();
-      if (!dataChannelRef.current) {
-        createDataChannel();
-      }
-
-      const offer = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(offer);
-      console.log('Offer created');
-
-      socketRef.current?.emit('offer', {
-        roomId,
-        offer,
-      });
-      hasSentOfferRef.current = true;
-      setRtcStatus('Offer sent');
-    } catch (error) {
-      console.error('Error creating offer:', error);
-      setMessageError('Failed to create WebRTC offer');
-    }
-  };
+  }, []);
 
 
   useEffect(() => {
@@ -343,24 +184,6 @@ function ChatPage() {
       console.error('Socket connection error:', error);
     });
 
-    socket.on('receive_message', (incomingMessage) => {
-      if (chatModeRef.current === 'server') {
-        setMessages((prevMessages) =>
-          addMessageIfMissing(prevMessages, {
-            ...incomingMessage,
-            status: incomingMessage.status || 'delivered',
-          })
-        );
-
-        if ((incomingMessage.sender || incomingMessage.author) !== CURRENT_USER_ID && incomingMessage.clientId) {
-          socket.emit('message-delivered', {
-            clientId: incomingMessage.clientId,
-            senderSocketId: incomingMessage.senderSocketId,
-          });
-        }
-      }
-    });
-
     socket.on('message-delivered', ({ clientId }) => {
       if (!clientId) {
         return;
@@ -368,111 +191,19 @@ function ChatPage() {
       setMessages((prevMessages) => markMessageStatus(prevMessages, clientId, 'delivered'));
     });
 
-    socket.on('peer-joined', async ({ roomId }) => {
-      console.log('Peer joined');
-      if (!isRoomCreatorRef.current || roomId !== activeRoomRef.current) {
-        return;
-      }
-
-      if (offerTimerRef.current) {
-        clearTimeout(offerTimerRef.current);
-      }
-
-      offerTimerRef.current = setTimeout(() => {
-        startOfferFlow(roomId);
-      }, 500);
-    });
-
-    socket.on('offer', async ({ roomId, offer }) => {
-      console.log('Offer received');
-      if (isRoomCreatorRef.current || roomId !== activeRoomRef.current) {
-        return;
-      }
-
-      try {
-        const peerConnection = setupPeerConnection();
-        remoteDescSetRef.current = false;
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-        remoteDescSetRef.current = true;
-        await flushPendingIceCandidates(peerConnection);
-        const answer = await peerConnection.createAnswer();
-        console.log('Answer created');
-        await peerConnection.setLocalDescription(answer);
-
-        socket.emit('answer', {
-          roomId,
-          answer,
-        });
-        setRtcStatus('Answer sent');
-      } catch (error) {
-        console.error('Error handling offer:', error);
-        setMessageError('Failed to handle WebRTC offer');
-      }
-    });
-
-    socket.on('answer', async ({ roomId, answer }) => {
-      console.log('Answer received');
-      if (!isRoomCreatorRef.current || roomId !== activeRoomRef.current) {
-        return;
-      }
-
-      try {
-        const peerConnection = setupPeerConnection();
-        remoteDescSetRef.current = false;
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-        remoteDescSetRef.current = true;
-        await flushPendingIceCandidates(peerConnection);
-        setRtcStatus('Connected');
-      } catch (error) {
-        console.error('Error handling answer:', error);
-        setMessageError('Failed to handle WebRTC answer');
-      }
-    });
-
-    socket.on('ice-candidate', async ({ roomId, candidate }) => {
-      if (roomId !== activeRoomRef.current || !peerConnectionRef.current || !candidate) {
-        return;
-      }
-
-      try {
-        if (remoteDescSetRef.current) {
-          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
-              console.log('ICE received');
-        } else {
-          pendingIceCandidatesRef.current.push(candidate);
-              console.log('ICE received (queued)');
-        }
-      } catch (error) {
-        console.error('Error adding ICE candidate:', error);
-      }
-    });
+    if (activeRoomRef.current) {
+      socket.emit('join-room', activeRoomRef.current);
+    }
 
     return () => {
       socket.off('receive_message');
       socket.off('message-delivered');
-      socket.off('peer-joined');
-      socket.off('offer');
-      socket.off('answer');
-      socket.off('ice-candidate');
-      if (offerTimerRef.current) {
-        clearTimeout(offerTimerRef.current);
-        offerTimerRef.current = null;
-      }
       socket.disconnect();
       socketRef.current = null;
     };
   }, []);
 
-  useEffect(() => {
-    return () => {
-      if (dataChannelRef.current) {
-        dataChannelRef.current.close();
-      }
-      if (peerConnectionRef.current) {
-        peerConnectionRef.current.close();
-      }
-    };
-  }, []);
+
 
 
   useEffect(() => {
@@ -508,14 +239,7 @@ function ChatPage() {
   }, []);
 
   useEffect(() => {
-    if (!isOnline) {
-      console.log('Switching to OFFLINE mode');
-      setMode('offline');
-      return;
-    }
-
-    const connectionState = peerConnectionRef.current?.connectionState;
-    setMode(updateMode(connectionState, isOnline));
+    setMode(isOnline ? 'server' : 'offline');
   }, [isOnline]);
 
   useEffect(() => {
@@ -524,16 +248,31 @@ function ChatPage() {
 
 
   useEffect(() => {
+    if (!activeRoom || !socketRef.current) return;
+    
+    const socket = socketRef.current;
+    const handler = (msg) => {
+      if (msg.room_id !== activeRoom && msg.roomId !== activeRoom && msg.room !== activeRoom) return;
+      setMessages((prev) => addMessageIfMissing(prev, { ...msg, status: msg.status || 'delivered' }));
+    };
+
+    socket.on("receive_message", handler);
+
+    return () => {
+      socket.off("receive_message", handler);
+    };
+  }, [activeRoom]);
+
+  useEffect(() => {
     async function fetchMessages() {
-      if (chatMode !== 'server') {
-        return;
-      }
+      if (!activeRoom) return;
+      
       setLoadingMessages(true);
       setMessageError('');
       try {
         const token = await getToken();
-        const allMessages = await fetchMessagesApi(token);
-        setMessages((prevMessages) => mergeServerWithPending(allMessages, prevMessages));
+        const allMessages = await fetchMessagesApi(token, activeRoom);
+        setMessages((prev) => mergeMessages(allMessages, prev));
       } catch (error) {
         console.error('Error fetching messages:', error);
         setMessageError('Failed to load messages');
@@ -542,7 +281,7 @@ function ChatPage() {
       }
     }
     fetchMessages();
-  }, [chatMode]);
+  }, [activeRoom]);
 
 
   useEffect(() => {
@@ -551,7 +290,7 @@ function ChatPage() {
         return;
       }
 
-      const queuedMessages = getOfflineMessages();
+      const queuedMessages = getOfflineMessages(activeRoomRef.current);
       if (queuedMessages.length === 0) {
         return;
       }
@@ -564,23 +303,17 @@ function ChatPage() {
         try {
           const savedMessage = await sendMessageApi(
             queuedMessage.text,
-            queuedMessage.sender,
+            queuedMessage.sender_id,
             token,
-            { senderName: queuedMessage.senderName, senderEmail: queuedMessage.senderEmail }
+            queuedMessage.sender_name,
+            activeRoomRef.current,
+            queuedMessage.clientId
           );
           socketRef.current?.emit('send_message', {
             ...savedMessage,
             clientId: queuedMessage.clientId,
             status: 'sent',
           });
-
-          setMessages((prevMessages) =>
-            prevMessages.map((msg) =>
-              msg.clientId === queuedMessage.clientId
-                ? { ...savedMessage, clientId: queuedMessage.clientId, status: 'sent' }
-                : msg
-            )
-          );
         } catch (error) {
           console.error('Error syncing offline message:', error);
           remainingMessages.push(queuedMessage);
@@ -588,15 +321,16 @@ function ChatPage() {
       }
 
       if (remainingMessages.length === 0) {
-        clearOfflineMessages();
+        clearOfflineMessages(activeRoomRef.current);
       } else {
-        saveOfflineMessages(remainingMessages);
+        saveOfflineMessages(activeRoomRef.current, remainingMessages);
       }
 
       try {
         const token = await getToken();
-        const allMessages = await fetchMessagesApi(token);
-        setMessages((prevMessages) => mergeServerWithPending(allMessages, prevMessages));
+        const allMessages = await fetchMessagesApi(token, activeRoomRef.current);
+        const pendingMsgs = getOfflineMessages(activeRoomRef.current);
+        setMessages((prevMessages) => mergeMessages(allMessages, [...prevMessages, ...pendingMsgs]));
       } catch (error) {
         console.error('Error refreshing messages after offline sync:', error);
       }
@@ -622,46 +356,31 @@ function ChatPage() {
     const textToSend = newMessage.trim();
     const clientId = generateUUID();
     const tempMessage = {
-      id: `temp-${generateUUID()}`,
+      id: clientId,
       clientId,
       text: textToSend,
       timestamp: new Date().toISOString(),
-      sender: CURRENT_USER_ID,
+      sender_id: user?.id || currentUserIdRef.current,
+      sender_name: currentUserNameRef.current,
       pending: !isOnline,
       status: mode === 'offline' ? 'pending' : 'sending',
+      room_id: activeRoomRef.current
     };
 
     setMessages((prevMessages) => [...prevMessages, tempMessage]);
     setNewMessage('');
     setMessageError('');
 
-    if (mode === 'webrtc' && dataChannelRef.current?.readyState === 'open') {
-      try {
-        dataChannelRef.current.send(
-          JSON.stringify({
-            type: 'chat-message',
-            clientId,
-            text: textToSend,
-            timestamp: tempMessage.timestamp,
-            sender: currentUserIdRef.current || CURRENT_USER_ID,
-            senderName: currentUserNameRef.current,
-            senderEmail: currentUserEmailRef.current,
-          })
-        );
-        setMessages((prevMessages) => markMessageStatus(prevMessages, clientId, 'sent'));
-      } catch (error) {
-        console.error('Error sending WebRTC message:', error);
-        setMessages((prevMessages) => markMessageStatus(prevMessages, clientId, 'failed'));
-        setMessageError('WebRTC send failed');
-      }
-    } else if (mode === 'server') {
+    if (mode === 'server') {
       try {
         const token = await getToken();
         const savedMessage = await sendMessageApi(
           textToSend, 
-          currentUserIdRef.current || CURRENT_USER_ID, 
+          currentUserIdRef.current || user?.id, 
           token, 
-          { senderName: currentUserNameRef.current, senderEmail: currentUserEmailRef.current }
+          currentUserNameRef.current,
+          activeRoomRef.current,
+          clientId
         );
         setMessages((prevMessages) => {
           const withoutTemp = prevMessages.filter((msg) => msg.id !== tempMessage.id);
@@ -671,18 +390,24 @@ function ChatPage() {
             : [...withoutTemp, { ...savedMessage, clientId, status: 'sent' }];
         });
         socketRef.current?.emit('send_message', {
-          ...savedMessage,
-          clientId,
-          status: 'sent',
+          roomId: activeRoomRef.current,
+          message: {
+            ...savedMessage,
+            clientId,
+            status: 'sent',
+            room_id: activeRoomRef.current
+          }
         });
       } catch (error) {
         console.error('Error sending message:', error);
-        queueOfflineMessage({
+        queueOfflineMessage(activeRoomRef.current, {
           clientId,
           text: textToSend,
-          sender: CURRENT_USER_ID,
+          sender_id: user?.id || currentUserIdRef.current,
+          sender_name: currentUserNameRef.current,
           timestamp: tempMessage.timestamp,
           status: 'pending',
+          roomId: activeRoomRef.current,
         });
         setMessages((prevMessages) =>
           prevMessages.map((msg) =>
@@ -692,12 +417,14 @@ function ChatPage() {
         setMessageError('Message queued offline and will sync when online');
       }
     } else {
-      queueOfflineMessage({
+      queueOfflineMessage(activeRoomRef.current, {
         clientId,
         text: textToSend,
-        sender: CURRENT_USER_ID,
+        sender_id: user?.id || currentUserIdRef.current,
+        sender_name: currentUserNameRef.current,
         timestamp: tempMessage.timestamp,
         status: 'pending',
+        roomId: activeRoomRef.current,
       });
       setMessages((prevMessages) => markMessageStatus(prevMessages, clientId, 'pending'));
     }
@@ -705,9 +432,6 @@ function ChatPage() {
 
 
   const simulateIncomingMessage = async () => {
-    if (chatMode === 'webrtc') {
-      return;
-    }
     try {
       const savedMessage = await sendMessageApi('This is a simulated incoming message.', 'Other');
       socketRef.current?.emit('send_message', savedMessage);
@@ -727,76 +451,40 @@ function ChatPage() {
     }
   };
 
-  const handleCreateRoom = () => {
-    const roomId = roomInput.trim();
-    if (!roomId || !socketRef.current) {
-      return;
-    }
-
-    console.log('Creating room:', roomId);
-    activeRoomRef.current = roomId;
-    chatModeRef.current = 'webrtc';
-    hasSentOfferRef.current = false;
-    remoteDescSetRef.current = false;
-    pendingIceCandidatesRef.current = [];
-    setChatMode('webrtc');
-    setActiveRoom(roomId);
-    isRoomCreatorRef.current = true;
-    setRtcStatus('Waiting for peer');
-
-    setupPeerConnection();
-    socketRef.current.emit('join-room', roomId);
-  };
-
   const handleJoinRoom = () => {
     const roomId = roomInput.trim();
     if (!roomId || !socketRef.current) {
       return;
     }
 
+    if (activeRoomRef.current) {
+      socketRef.current.emit("leave-room", activeRoomRef.current);
+    }
+
     console.log('Joining room:', roomId);
     activeRoomRef.current = roomId;
-    chatModeRef.current = 'webrtc';
-    hasSentOfferRef.current = false;
-    remoteDescSetRef.current = false;
-    pendingIceCandidatesRef.current = [];
-    setChatMode('webrtc');
+    setMessages([]);
     setActiveRoom(roomId);
-    isRoomCreatorRef.current = false;
-    setRtcStatus('Joined room');
-
-    setupPeerConnection();
+    localStorage.setItem("roomId", roomId);
     socketRef.current.emit('join-room', roomId);
   };
 
-  const switchToServerMode = () => {
-    console.log('Switching to server mode');
+  const handleLeaveRoom = () => {
+    if (activeRoomRef.current && socketRef.current) {
+      socketRef.current.emit("leave-room", activeRoomRef.current);
+    }
     activeRoomRef.current = '';
-    chatModeRef.current = 'server';
-    pendingIceCandidatesRef.current = [];
-    remoteDescSetRef.current = false;
-    hasSentOfferRef.current = false;
-    setChatMode('server');
-    setMode(isOnline ? 'server' : 'offline');
     setActiveRoom('');
-    setRtcStatus('Not connected');
-
-    if (dataChannelRef.current) {
-      dataChannelRef.current.close();
-      dataChannelRef.current = null;
-    }
-
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
+    setRoomInput('');
+    setMessages([]);
+    localStorage.removeItem("roomId");
   };
 
   return (
     <div className="chat-page-container">
       <AnimatedBackground />
       <header className="chat-header">
-        <h1>Disaster Connect</h1>
+        <h1>Disaster Connect {activeRoom ? `- Room: ${activeRoom}` : '- Global Chat'}</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <button onClick={simulateIncomingMessage} className="chat-button-subtle">
             Simulate Incoming
@@ -814,14 +502,11 @@ function ChatPage() {
             onChange={(e) => setRoomInput(e.target.value)}
             placeholder="Enter Room ID"
           />
-          <button type="button" className="chat-button" onClick={handleCreateRoom}>
-            Create Room
-          </button>
           <button type="button" className="chat-button" onClick={handleJoinRoom}>
             Join Room
           </button>
-          <button type="button" className="chat-button-secondary" onClick={switchToServerMode}>
-            Exit to Server Mode
+          <button type="button" className="chat-button-secondary" onClick={handleLeaveRoom}>
+            Leave Room
           </button>
         </div>
         <StatusBadge mode={mode} />
@@ -835,13 +520,16 @@ function ChatPage() {
             ) : messageError ? (
               <div className="empty-state">{messageError}</div>
             ) : messages.length > 0 ? (
-              messages.map((msg) => (
-                <MessageBubble
-                  key={msg.id ?? `${msg.timestamp}-${msg.text}`}
-                  message={msg}
-                  isOwnMessage={(msg.sender_id || msg.sender || msg.author) === (currentUserIdRef.current || CURRENT_USER_ID)}
-                />
-              ))
+              messages.map((msg) => {
+                const isMine = msg.sender_id === currentUserId;
+                return (
+                  <MessageBubble
+                    key={msg.id ?? `${msg.created_at || msg.timestamp}-${msg.text}`}
+                    message={msg}
+                    isOwnMessage={isMine}
+                  />
+                );
+              })
             ) : (
               <div className="empty-state">
                 <h2>Welcome!</h2>

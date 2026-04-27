@@ -88,14 +88,8 @@ const sanitizeMessagePayload = (messageData) => {
 io.on("connection", (socket) => {
   console.log("User connected");
 
-  socket.on("send_message", (messageData) => {
-    const sanitized = sanitizeMessagePayload(messageData);
-    if (!sanitized) {
-      socket.emit("message_error", { error: "Message payload must include a non-empty 'text' or 'content' field" });
-      return;
-    }
-    sanitized.senderSocketId = socket.id;
-    io.emit("receive_message", sanitized);
+  socket.on("send_message", ({ roomId, message }) => {
+    io.to(roomId).emit("receive_message", message);
   });
 
   socket.on("message-delivered", ({ clientId, senderSocketId }) => {
@@ -108,6 +102,10 @@ io.on("connection", (socket) => {
   socket.on("join-room", (roomId) => {
     socket.join(roomId);
     socket.to(roomId).emit("peer-joined", { roomId });
+  });
+
+  socket.on("leave-room", (roomId) => {
+    socket.leave(roomId);
   });
 
   socket.on("offer", ({ roomId, offer }) => {

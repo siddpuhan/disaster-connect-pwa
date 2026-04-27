@@ -1,56 +1,58 @@
-import Database from "better-sqlite3";
-import path from "path";
-import { fileURLToPath } from "url";
+import pg from 'pg';
+import dotenv from 'dotenv';
+dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const dbPath = path.join(__dirname, "..", "database.db");
+const { Pool } = pg;
 
-let db;
+// Connect to PostgreSQL using Supabase connection string from environment variables
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
 
 const connectDB = async () => {
   try {
-    db = new Database(dbPath);
-    db.pragma("journal_mode = WAL");
-
-    db.exec(`
+    const client = await pool.connect();
+    
+    // Create messages table
+    await client.query(`
       CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         text TEXT NOT NULL,
-        sender TEXT DEFAULT 'Anonymous',
         sender_id TEXT,
         sender_name TEXT,
-        timestamp TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+        room_id TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
-    // Safely add new columns to existing table
-    try { db.exec("ALTER TABLE messages ADD COLUMN sender_id TEXT;"); } catch (e) {}
-    try { db.exec("ALTER TABLE messages ADD COLUMN sender_name TEXT;"); } catch (e) {}
+    // Create users table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        clerk_id TEXT UNIQUE NOT NULL,
+        name TEXT
+      );
+    `);
 
-    db.exec(`
-
+    // Create resources table
+    await client.query(`
       CREATE TABLE IF NOT EXISTS resources (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         type TEXT NOT NULL CHECK(type IN ('need', 'offer')),
         category TEXT NOT NULL,
         description TEXT NOT NULL,
-        createdAt TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
-    console.log("SQLite connected successfully");
+    console.log("PostgreSQL connected successfully");
+    client.release();
   } catch (error) {
-    console.error("SQLite connection error:", error.message);
+    console.error("PostgreSQL connection error:", error.message);
     process.exit(1);
   }
 };
 
-export const getDB = () => {
-  if (!db) {
-    throw new Error("Database is not initialized");
-  }
-  return db;
-};
+export const getDB = () => pool;
 
 export default connectDB;

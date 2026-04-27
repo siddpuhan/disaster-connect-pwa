@@ -212,20 +212,20 @@ body {
   line-height: 1.5;
 }
 
-.own-message {
+.right-message {
   align-self: flex-end;
 }
 
-.own-message .message-content {
+.right-message .message-content {
   background-color: var(--own-message-bg);
   border-radius: 18px 18px 4px 18px;
 }
 
-.other-message {
+.left-message {
   align-self: flex-start;
 }
 
-.other-message .message-content {
+.left-message .message-content {
   background-color: var(--other-message-bg);
   border: 1px solid var(--border-color);
   border-radius: 18px 18px 18px 4px;

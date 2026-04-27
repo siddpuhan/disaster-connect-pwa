@@ -1,12 +1,9 @@
-const OFFLINE_MESSAGES_KEY = 'offlineMessages';
+const getStorageKey = (roomId) => `offlineMessages_${roomId || 'global'}`;
 
-export const getOfflineMessages = () => {
+export const getOfflineMessages = (roomId) => {
   try {
-    const raw = localStorage.getItem(OFFLINE_MESSAGES_KEY);
-    if (!raw) {
-      return [];
-    }
-
+    const raw = localStorage.getItem(getStorageKey(roomId));
+    if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
   } catch (error) {
@@ -15,23 +12,23 @@ export const getOfflineMessages = () => {
   }
 };
 
-export const saveOfflineMessages = (messages) => {
+export const saveOfflineMessages = (roomId, messages) => {
   try {
-    localStorage.setItem(OFFLINE_MESSAGES_KEY, JSON.stringify(messages));
+    localStorage.setItem(getStorageKey(roomId), JSON.stringify(messages));
   } catch (error) {
     console.error('Failed to save offline messages:', error);
   }
 };
 
-export const queueOfflineMessage = (message) => {
-  const currentMessages = getOfflineMessages();
+export const queueOfflineMessage = (roomId, message) => {
+  const currentMessages = getOfflineMessages(roomId);
   currentMessages.push(message);
-  saveOfflineMessages(currentMessages);
+  saveOfflineMessages(roomId, currentMessages);
 };
 
-export const clearOfflineMessages = () => {
+export const clearOfflineMessages = (roomId) => {
   try {
-    localStorage.removeItem(OFFLINE_MESSAGES_KEY);
+    localStorage.removeItem(getStorageKey(roomId));
   } catch (error) {
     console.error('Failed to clear offline messages:', error);
   }

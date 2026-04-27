@@ -22,16 +22,16 @@ export const createResource = async (req, res) => {
       });
     }
 
-    const db = getDB();
-    const insertResource = db.prepare(
-      'INSERT INTO resources (type, category, description) VALUES (?, ?, ?)'
-    );
-    const result = insertResource.run(trimmedType, trimmedCategory, trimmedDescription);
-    const newResource = db
-      .prepare(
-        'SELECT id, type, category, description, createdAt FROM resources WHERE id = ?'
-      )
-      .get(result.lastInsertRowid);
+    const pool = getDB();
+    const query = `
+      INSERT INTO resources (type, category, description) 
+      VALUES ($1, $2, $3) 
+      RETURNING id, type, category, description, created_at AS "createdAt"
+    `;
+    const values = [trimmedType, trimmedCategory, trimmedDescription];
+    
+    const result = await pool.query(query, values);
+    const newResource = result.rows[0];
 
     return res.status(201).json({ success: true, data: newResource });
   } catch (error) {
@@ -45,12 +45,15 @@ export const createResource = async (req, res) => {
 
 export const getResources = async (req, res) => {
   try {
-    const db = getDB();
-    const resources = db
-      .prepare(
-        'SELECT id, type, category, description, createdAt FROM resources ORDER BY createdAt DESC'
-      )
-      .all();
+    const pool = getDB();
+    const query = `
+      SELECT id, type, category, description, created_at AS "createdAt" 
+      FROM resources 
+      ORDER BY created_at DESC
+    `;
+    const result = await pool.query(query);
+    const resources = result.rows;
+
     return res.status(200).json({ success: true, count: resources.length, data: resources });
   } catch (error) {
     return res.status(500).json({
