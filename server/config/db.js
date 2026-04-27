@@ -28,9 +28,10 @@ const connectDB = async () => {
     // Create users table
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        clerk_id TEXT UNIQUE NOT NULL,
-        name TEXT
+        id TEXT PRIMARY KEY, -- Clerk ID
+        name TEXT,
+        email TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
