@@ -4,8 +4,8 @@ import { LogoHorizontal } from "../ui/Logo";
 
 const footerLinks = [
   { label: "Product", href: "#" },
-  { label: "Features", href: "#features" },
-  { label: "How it Works", href: "#how-it-works" },
+  { label: "Superpowers", href: "#ai-superpowers" },
+  { label: "How it works", href: "#how-thinkroom-thinks" },
   { label: "FAQ", href: "#faq" },
 ];
 
@@ -14,8 +14,6 @@ const socials = [
   { label: "LinkedIn", icon: "LI", href: "#" },
   { label: "Email", icon: "@", href: "#" },
 ];
-
-const techItems = ["Next.js", "Groq", "Supabase", "Socket.IO"];
 
 function AnimatedWave() {
   return (
@@ -121,19 +119,8 @@ export default function Footer() {
             viewport={{ once: true }}
             transition={{ delay: 0.3 }}
           >
-            <h4 className="text-[11px] font-extrabold text-ink-muted mb-4 uppercase tracking-widest">Stack</h4>
-            <div className="flex flex-wrap gap-2">
-              {techItems.map((tech) => (
-                <span
-                  key={tech}
-                  className="px-2.5 py-1 rounded-lg border-2 border-ink bg-paper text-[10px] font-bold text-ink"
-                >
-                  {tech}
-                </span>
-              ))}
-            </div>
-
-            <div className="mt-5 p-3.5 rounded-2xl border-2 border-ink bg-pastel-green/20">
+            <h4 className="text-[11px] font-extrabold text-ink-muted mb-4 uppercase tracking-widest">Status</h4>
+            <div className="p-3.5 rounded-2xl border-2 border-ink bg-pastel-green/20">
               <div className="flex items-center gap-2">
                 <motion.div
                   className="w-2 h-2 rounded-full bg-accent-green"

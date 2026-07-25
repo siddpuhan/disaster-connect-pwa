@@ -640,20 +640,9 @@ function BrowserDemo() {
   );
 }
 
-/* ───────────────────────────────────────────
-   Tech stack badges (unchanged)
-   ─────────────────────────────────────────── */
-const techStack = [
-  { name: "Next.js", color: "bg-pastel-blue" },
-  { name: "React", color: "bg-pastel-purple" },
-  { name: "Socket.IO", color: "bg-pastel-orange" },
-  { name: "Supabase", color: "bg-pastel-green" },
-  { name: "Groq", color: "bg-pastel-pink" },
-];
-
 export default function Hero({ onGetStarted }: { onGetStarted?: () => void }) {
   return (
-    <section className="tr-section-padding pt-32 md:pt-36 lg:pt-40 overflow-hidden relative">
+    <section id="hero" className="tr-section-padding pt-32 md:pt-36 lg:pt-40 overflow-hidden relative">
       <div className="absolute inset-0 overflow-hidden pointer-events-none select-none">
         {[0, 1, 2, 3, 4, 5].map((i) => (
           <motion.div
@@ -719,14 +708,16 @@ export default function Hero({ onGetStarted }: { onGetStarted?: () => void }) {
               </MagneticButton>
             </div>
 
-            <div className="flex items-center gap-1.5 mt-8 text-ink-muted flex-wrap">
-              <span className="text-[11px] font-semibold mr-1">Built with</span>
-              {techStack.map((tech) => (
-                <span key={tech.name} className={`px-2.5 py-1 rounded-lg border-2 border-ink text-[10px] font-bold text-ink ${tech.color}`}>
-                  {tech.name}
-                </span>
-              ))}
-            </div>
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1], delay: 0.175 }}
+              className="mt-8"
+            >
+              <p className="text-[14px] font-medium text-ink-muted leading-relaxed">
+                <span className="text-accent-purple">✨</span> AI that quietly organizes every conversation.
+              </p>
+            </motion.div>
           </motion.div>
 
           <motion.div

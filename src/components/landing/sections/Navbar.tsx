@@ -1,43 +1,54 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useScrollSpy } from "../hooks/useScrollSpy";
 
 const navItems = [
   { label: "Product", href: "#product" },
-  { label: "Features", href: "#features" },
-  { label: "How it works", href: "#how-it-works" },
+  { label: "Superpowers", href: "#ai-superpowers" },
+  { label: "How it works", href: "#how-thinkroom-thinks" },
   { label: "FAQ", href: "#faq" },
 ];
+
+const sectionNavMap: Record<string, string> = {
+  hero: "#product",
+  product: "#product",
+  "ai-superpowers": "#ai-superpowers",
+  "how-thinkroom-thinks": "#how-thinkroom-thinks",
+  comparison: "#faq",
+  faq: "#faq",
+};
+
+function scrollToSection(href: string) {
+  const id = href.slice(1);
+  const el = document.getElementById(id);
+  if (el) {
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
 
 export default function Navbar({ onSignIn, onGetStarted }: { onSignIn?: () => void; onGetStarted?: () => void }) {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [activeSection, setActiveSection] = useState("product");
-  const linkRefs = useRef<(HTMLAnchorElement | null)[]>([]);
   const [logoHovered, setLogoHovered] = useState(false);
   const [ctaHovered, setCtaHovered] = useState(false);
 
-  useEffect(() => {
-    const onScroll = () => {
-      setScrolled(window.scrollY > 40);
-      const ids = navItems.map((i) => i.href.slice(1));
-      for (const id of ids.reverse()) {
-        const el = document.getElementById(id);
-        if (el) {
-          const rect = el.getBoundingClientRect();
-          if (rect.top <= 200) {
-            setActiveSection(id);
-            break;
-          }
-        }
-      }
-    };
-    onScroll();
-    window.addEventListener("scroll", onScroll);
-    return () => window.removeEventListener("scroll", onScroll);
+  const activeSection = useScrollSpy(
+    Object.keys(sectionNavMap),
+    "-40% 0px -50% 0px"
+  );
+
+  const activeHref = sectionNavMap[activeSection] ?? "#product";
+
+  const onScroll = useCallback(() => {
+    setScrolled(window.scrollY > 40);
   }, []);
 
-  const isActive = (href: string) => activeSection === href.slice(1);
+  useEffect(() => {
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [onScroll]);
 
   return (
     <motion.header
@@ -56,7 +67,7 @@ export default function Navbar({ onSignIn, onGetStarted }: { onSignIn?: () => vo
         transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
         className="flex items-center justify-between w-full h-full px-8 md:px-10 rounded-[999px]"
         style={{
-              background: "#B084D7",
+          background: "#B084D7",
           border: "1.5px solid #1A1A1A",
           boxShadow: scrolled
             ? "0 8px 32px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.6)"
@@ -85,46 +96,35 @@ export default function Navbar({ onSignIn, onGetStarted }: { onSignIn?: () => vo
 
         {/* Desktop Nav */}
         <nav className="hidden md:flex items-center gap-1 relative h-full">
-          {navItems.map((item, i) => (
-            <a
-              key={item.href}
-              ref={(el) => { linkRefs.current[i] = el; }}
-              href={item.href}
-              className="group relative px-4 py-1.5 rounded-full text-sm font-medium tracking-[-0.01em] transition-all duration-250 outline-none focus:outline-none"
-              style={{
-                color: isActive(item.href) ? "#1A1A1A" : "rgba(26, 26, 26, 0.55)",
-              }}
-            >
-              {isActive(item.href) && (
-                <motion.span
-                  layoutId="navPill"
-                  className="absolute inset-0 rounded-full"
-                  style={{ background: "rgba(26, 26, 26, 0.07)" }}
-                  transition={{ type: "spring", stiffness: 380, damping: 28 }}
-                />
-              )}
-              <span className="relative z-[1] block group-hover:-translate-y-[1.5px] transition-transform duration-200">
-                {item.label}
-              </span>
-              <span
-                className="absolute left-1/2 bottom-[2px] h-[2px] rounded-full -translate-x-1/2 transition-all duration-250"
+          {navItems.map((item) => {
+            const isActive = activeHref === item.href;
+            return (
+              <button
+                key={item.href}
+                onClick={() => scrollToSection(item.href)}
+                className="relative px-4 py-1.5 rounded-full text-sm font-medium tracking-[-0.01em] outline-none focus:outline-none"
                 style={{
-                  background: "rgba(26, 26, 26, 0.3)",
-                  width: isActive(item.href) ? "0" : "0",
+                  color: isActive ? "#FFFFFF" : "rgba(26, 26, 26, 0.55)",
                 }}
-                onMouseEnter={(e) => {
-                  if (!isActive(item.href)) {
-                    e.currentTarget.style.width = "60%";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isActive(item.href)) {
-                    e.currentTarget.style.width = "0";
-                  }
-                }}
-              />
-            </a>
-          ))}
+              >
+                {isActive && (
+                  <motion.span
+                    layoutId="navPill"
+                    className="absolute inset-0 rounded-full"
+                    style={{ background: "#7C5CFC" }}
+                    transition={{
+                      type: "spring",
+                      stiffness: 400,
+                      damping: 32,
+                    }}
+                  />
+                )}
+                <span className="relative z-[1] block transition-transform duration-200">
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
         </nav>
 
         {/* Desktop CTA */}
@@ -190,26 +190,31 @@ export default function Navbar({ onSignIn, onGetStarted }: { onSignIn?: () => vo
             transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
             className="md:hidden mt-2 rounded-[24px] overflow-hidden"
             style={{
-          background: "#B084D7",
+              background: "#B084D7",
               border: "1.5px solid #1A1A1A",
               boxShadow: "0 8px 32px rgba(0,0,0,0.08)",
             }}
           >
             <div className="px-5 py-4 flex flex-col gap-1">
-              {navItems.map((item) => (
-                <a
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMobileOpen(false)}
-                  className="text-sm font-medium px-3 py-2.5 rounded-xl transition-colors duration-200 outline-none focus:outline-none"
-                  style={{
-                    color: isActive(item.href) ? "#1A1A1A" : "rgba(26,26,26,0.55)",
-                    background: isActive(item.href) ? "rgba(26,26,26,0.07)" : "transparent",
-                  }}
-                >
-                  {item.label}
-                </a>
-              ))}
+              {navItems.map((item) => {
+                const isActive = activeHref === item.href;
+                return (
+                  <button
+                    key={item.href}
+                    onClick={() => {
+                      scrollToSection(item.href);
+                      setMobileOpen(false);
+                    }}
+                    className="text-sm font-medium px-3 py-2.5 rounded-xl transition-colors duration-200 text-left outline-none focus:outline-none"
+                    style={{
+                      color: isActive ? "#FFFFFF" : "rgba(26,26,26,0.55)",
+                      background: isActive ? "#7C5CFC" : "transparent",
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
               <div className="pt-3 mt-2 border-t border-[rgba(26,26,26,0.08)] flex flex-col gap-2">
                 <button
                   onClick={onSignIn}
