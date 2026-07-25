@@ -1,7 +1,7 @@
 import React from 'react';
 import { SupabaseProvider } from "../components/SupabaseProvider";
 import { createClient } from "../lib/supabase-server";
-import { ThemeProvider } from "../context/ThemeContext";
+
 import { Inter } from "next/font/google";
 
 const inter = Inter({
@@ -32,9 +32,7 @@ export default async function RootLayout({
     <html lang="en" className={inter.variable} suppressHydrationWarning>
       <body>
         <SupabaseProvider initialSession={initialSession}>
-          <ThemeProvider>
-            {children}
-          </ThemeProvider>
+          {children}
         </SupabaseProvider>
       </body>
     </html>

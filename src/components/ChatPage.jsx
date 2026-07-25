@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useRef, useContext, lazy, Suspense, useCallback } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { io } from 'socket.io-client';
 import { useUser, useSupabase } from '@/components/SupabaseProvider';
@@ -8,7 +8,7 @@ import AnimatedBackground from '../AnimatedBackground';
 import { fetchMessagesApi, sendMessageApi } from '../api/messagesApi';
 import { clearOfflineMessages, getOfflineMessages, queueOfflineMessage, saveOfflineMessages } from '../utils/offlineSync';
 import '../App.css';
-import ThemeContext from '../context/ThemeContext';
+
 import { useChatStore } from '../store/chatStore';
 import { useTaskStore } from '../store/taskStore';
 import ChatInput from './chat/ChatInput';
@@ -86,7 +86,6 @@ export default function ChatPage() {
   const { user } = useSupabase();
   const { supabase } = useSupabase();
   
-const { theme, toggleTheme } = useContext(ThemeContext);
   
   const streamingMessages = useChatStore(state => state.streamingMessages);
   const addStreamStart = useChatStore(state => state.addStreamStart);
@@ -697,15 +696,6 @@ useEffect(() => {
                   )}
                 </motion.button>
               )}
-              <motion.button
-                className="cmd-btn cmd-btn-icon"
-                onClick={toggleTheme}
-                title="Toggle theme"
-                whileHover={{ rotate: 15 }}
-                transition={{ duration: 0.2 }}
-              >
-                {theme === 'dark' ? '☀️' : '🌙'}
-              </motion.button>
               <motion.div
                 className="cmd-avatar"
                 whileHover={{ scale: 1.05 }}

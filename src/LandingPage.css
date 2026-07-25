@@ -17,18 +17,6 @@
   --font-mono: 'Roboto Mono', monospace;
 }
 
-[data-theme="light"] {
-  --lp-background: #FFFFFF;
-  --lp-primary: #FF5722;
-  --lp-primary-fixed-dim: #FF5722;
-  --lp-on-background: #000000;
-  --lp-surface-container-low: #f8f9fa;
-  --lp-surface-container-high: #e9ecef;
-  --lp-surface-container-highest: #dee2e6;
-  --lp-on-surface-variant: #6c757d;
-  --lp-error: #FF0000;
-}
-
 /* Base styles and variables */
 .lp-container {
   background-color: var(--lp-background);
