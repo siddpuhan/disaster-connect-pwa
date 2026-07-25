@@ -1,210 +1,322 @@
 "use client";
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useRef } from "react";
+import { motion, useInView } from "framer-motion";
+import AnimatedCounter from "../ui/AnimatedCounter";
 import WavySeparator from "../ui/WavySeparator";
 
-const beforeItems = [
-  { label: "Team chats", detail: "Scattered across Slack, Discord, email", status: "chaotic" },
-  { label: "Tasks", detail: "Lost in threads, never followed up", status: "chaotic" },
-  { label: "Decisions", detail: "Forgotten or buried in scrollback", status: "chaotic" },
-  { label: "Documentation", detail: "Manual, outdated, nobody writes it", status: "chaotic" },
-  { label: "Meeting notes", detail: "Never taken, never shared", status: "chaotic" },
+const beforeRows = [
+  { emoji: "😵", label: "Messages everywhere" },
+  { emoji: "📌", label: "Tasks forgotten" },
+  { emoji: "📄", label: "Decisions disappear" },
+  { emoji: "🔁", label: "Meetings repeated" },
+  { emoji: "⏰", label: "Manual follow-ups" },
 ];
 
-const afterItems = [
-  { label: "Team chats", detail: "One organized workspace with AI context", status: "clean" },
-  { label: "Tasks", detail: "Auto-extracted, assigned, and tracked", status: "clean" },
-  { label: "Decisions", detail: "Captured as searchable knowledge notes", status: "clean" },
-  { label: "Documentation", detail: "Generated automatically from conversations", status: "clean" },
-  { label: "Meeting notes", detail: "AI-written summaries every time", status: "clean" },
+const afterRows = [
+  { emoji: "🤖", label: "AI organizes chats" },
+  { emoji: "✅", label: "Tasks extracted automatically" },
+  { emoji: "🧠", label: "Decisions saved forever" },
+  { emoji: "📝", label: "Meeting summaries generated" },
+  { emoji: "🚀", label: "AI follows up automatically" },
 ];
 
-function Toggle({ active, onToggle }: { active: boolean; onToggle: () => void }) {
+const inputTools = [
+  { emoji: "💬", label: "Slack" },
+  { emoji: "🎮", label: "Discord" },
+  { emoji: "✉️", label: "Email" },
+  { emoji: "📓", label: "Notion" },
+  { emoji: "🎥", label: "Meet" },
+];
+
+const outputItems = [
+  { emoji: "✅", label: "Tasks" },
+  { emoji: "📝", label: "Summary" },
+  { emoji: "🧠", label: "Memory" },
+  { emoji: "⚡", label: "Action Items" },
+];
+
+function ComparisonRow({
+  emoji,
+  label,
+  index,
+  isInView,
+  bgColor,
+}: {
+  emoji: string;
+  label: string;
+  index: number;
+  isInView: boolean;
+  bgColor: string;
+}) {
   return (
-    <button
-      onClick={onToggle}
-      className="relative flex items-center bg-white border-3 border-ink rounded-2xl p-1 shadow-[0_3px_0_0_#1A1A1A]"
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={isInView ? { opacity: 1, y: 0 } : {}}
+      transition={{
+        delay: index * 0.08,
+        duration: 0.35,
+        ease: [0.22, 1, 0.36, 1],
+      }}
+      className="flex items-center gap-4 p-3 rounded-2xl border-2 border-ink bg-white hover:-translate-y-0.5 transition-transform duration-200"
     >
-      <div className="relative z-10 flex">
-        {["Without", "With ThinkRoom"].map((label, i) => (
-          <span
-            key={label}
-            className={`px-5 py-2 text-[12px] font-bold rounded-xl transition-colors duration-300 ${
-              (active && i === 1) || (!active && i === 0) ? "text-white" : "text-ink"
-            }`}
-          >
-            {label}
-          </span>
+      <div
+        className={`w-9 h-9 rounded-xl border-2 border-ink ${bgColor} flex items-center justify-center text-base flex-shrink-0`}
+      >
+        <motion.span
+          animate={{ y: [0, -2, 0] }}
+          transition={{
+            repeat: Infinity,
+            duration: 2,
+            delay: index * 0.2,
+            ease: "easeInOut",
+          }}
+        >
+          {emoji}
+        </motion.span>
+      </div>
+      <span className="text-[13px] font-bold text-ink">{label}</span>
+    </motion.div>
+  );
+}
+
+function ComparisonCard({
+  title,
+  subtitle,
+  rows,
+  headerBg,
+  rowBg,
+  headerEmoji,
+}: {
+  title: string;
+  subtitle: string;
+  rows: { emoji: string; label: string }[];
+  headerBg: string;
+  rowBg: string;
+  headerEmoji: string;
+}) {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: "-80px" });
+
+  return (
+    <motion.div
+      ref={ref}
+      whileHover={{ y: -6 }}
+      transition={{ type: "spring", stiffness: 200, damping: 15 }}
+      className="tr-card overflow-hidden"
+    >
+      <div className={`px-6 py-5 border-b-3 border-ink ${headerBg}`}>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl border-3 border-ink bg-white flex items-center justify-center text-lg flex-shrink-0">
+            {headerEmoji}
+          </div>
+          <div>
+            <h3 className="text-[17px] font-extrabold text-ink">{title}</h3>
+            <p className="text-[12px] font-medium text-ink-muted">{subtitle}</p>
+          </div>
+        </div>
+      </div>
+      <div className="p-5 space-y-2.5">
+        {rows.map((row, i) => (
+          <ComparisonRow
+            key={row.label}
+            emoji={row.emoji}
+            label={row.label}
+            index={i}
+            isInView={isInView}
+            bgColor={rowBg}
+          />
         ))}
       </div>
+    </motion.div>
+  );
+}
+
+function CenterPipeline() {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: "-100px" });
+
+  return (
+    <div ref={ref} className="flex flex-col items-center gap-2 py-4 md:py-10">
+      <div className="flex flex-wrap justify-center gap-1.5 max-w-[180px]">
+        {inputTools.map((tool, i) => (
+          <motion.div
+            key={tool.label}
+            initial={{ opacity: 0, x: i % 2 === 0 ? -16 : 16, y: 10 }}
+            animate={isInView ? { opacity: 1, x: 0, y: 0 } : {}}
+            transition={{
+              delay: 0.25 + i * 0.07,
+              duration: 0.35,
+              ease: [0.22, 1, 0.36, 1],
+            }}
+            className="px-2.5 py-1 rounded-xl border-2 border-ink bg-white text-[10px] font-bold flex items-center gap-1"
+          >
+            <span className="text-[12px]">{tool.emoji}</span>
+            <span className="text-ink">{tool.label}</span>
+          </motion.div>
+        ))}
+      </div>
+
       <motion.div
-        layoutId="toggle-bg"
-        className="absolute top-1 bottom-1 left-1 right-1/2 rounded-xl bg-accent-purple border-2 border-ink z-0"
-        animate={{
-          left: active ? "50%" : "0.25rem",
-          right: active ? "0.25rem" : "50%",
-        }}
-        transition={{ type: "spring", stiffness: 300, damping: 25 }}
+        initial={{ opacity: 0, scaleY: 0 }}
+        animate={isInView ? { opacity: 1, scaleY: 1 } : {}}
+        transition={{ delay: 0.65, duration: 0.3 }}
+        className="w-0.5 h-5 bg-ink"
+        style={{ transformOrigin: "top" }}
       />
-    </button>
+      <motion.div
+        initial={{ opacity: 0, y: -4 }}
+        animate={isInView ? { opacity: 1, y: 0 } : {}}
+        transition={{ delay: 0.7, duration: 0.2 }}
+        className="text-[10px] font-bold text-ink-muted"
+      >
+        ↓
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, scale: 0.85 }}
+        animate={isInView ? { opacity: 1, scale: 1 } : {}}
+        transition={{
+          delay: 0.8,
+          type: "spring",
+          stiffness: 250,
+          damping: 12,
+        }}
+        className="px-4 py-2 rounded-2xl border-3 border-ink bg-accent-purple text-white text-[12px] font-extrabold flex items-center gap-1.5 shadow-[0_3px_0_0_#1A1A1A]"
+      >
+        <span className="text-[14px]">✨</span>
+        <span>ThinkRoom AI</span>
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, y: -4 }}
+        animate={isInView ? { opacity: 1, y: 0 } : {}}
+        transition={{ delay: 1.0, duration: 0.2 }}
+        className="text-[10px] font-bold text-ink-muted"
+      >
+        ↓
+      </motion.div>
+
+      <div className="flex flex-col gap-1.5">
+        {outputItems.map((item, i) => (
+          <motion.div
+            key={item.label}
+            initial={{ opacity: 0, x: 12, y: 8 }}
+            animate={isInView ? { opacity: 1, x: 0, y: 0 } : {}}
+            transition={{
+              delay: 1.1 + i * 0.08,
+              duration: 0.3,
+              ease: [0.22, 1, 0.36, 1],
+            }}
+            className="px-3 py-1.5 rounded-xl border-2 border-ink bg-pastel-green/60 text-[10px] font-bold flex items-center gap-1.5"
+          >
+            <motion.span
+              animate={{ scale: [1, 1.2, 1] }}
+              transition={{
+                repeat: Infinity,
+                duration: 1.5,
+                delay: 1.1 + i * 0.2,
+                ease: "easeInOut",
+              }}
+            >
+              {item.emoji}
+            </motion.span>
+            <span className="text-ink">{item.label}</span>
+          </motion.div>
+        ))}
+      </div>
+    </div>
   );
 }
 
 export default function BeforeAfter() {
-  const [showAfter, setShowAfter] = useState(false);
-
   return (
     <>
       <WavySeparator color="#FEFCF3" />
-      <section id="comparison" className="tr-section-padding bg-ivory overflow-hidden">
-        <div className="tr-container-wide">
+      <section
+        id="comparison"
+        className="tr-section-padding bg-ivory overflow-hidden relative"
+      >
+        <div
+          className="absolute inset-0 opacity-[0.03] pointer-events-none"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle, #1A1A1A 1px, transparent 1px)",
+            backgroundSize: "32px 32px",
+          }}
+        />
+        <div className="absolute top-32 left-10 w-72 h-72 rounded-full bg-pastel-purple/10 pointer-events-none" />
+        <div className="absolute bottom-32 right-10 w-96 h-96 rounded-full bg-pastel-blue/10 pointer-events-none" />
+
+        <div className="tr-container-wide relative z-10">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
-            className="text-center mb-10"
+            className="text-center mb-12"
           >
-            <span className="inline-block px-4 py-1.5 rounded-full border-2 border-ink bg-pastel-orange text-[12px] font-bold mb-4">
-              The difference
+            <span className="inline-block px-4 py-1.5 rounded-full border-2 border-ink bg-pastel-purple text-[12px] font-bold mb-4">
+              The Difference
             </span>
-            <h2 className="tr-heading-lg mb-6">
+            <h2 className="tr-heading-lg mb-4">
               Before vs
               <br />
               After ThinkRoom.
             </h2>
-            <div className="flex justify-center">
-              <Toggle active={showAfter} onToggle={() => setShowAfter(!showAfter)} />
-            </div>
+            <p className="text-[17px] font-medium text-ink-soft max-w-lg mx-auto leading-relaxed">
+              Stop juggling tools.
+              <br />
+              Let AI organize everything automatically.
+            </p>
           </motion.div>
 
-          <div className="max-w-4xl mx-auto relative">
-            <AnimatePresence mode="wait">
-              {showAfter ? (
-                <motion.div
-                  key="after"
-                  initial={{ opacity: 0, x: 40 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -40 }}
-                  transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                >
-                  <div className="tr-card overflow-hidden shadow-[0_6px_0_0_#1A1A1A] border-3 border-ink">
-                    <div className="px-6 py-4 border-b-2 border-ink bg-pastel-green/40">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-xl border-2 border-ink bg-accent-green flex items-center justify-center">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                        </div>
-                        <div>
-                          <h3 className="text-[17px] font-extrabold text-ink">With ThinkRoom</h3>
-                          <p className="text-[11px] font-medium text-ink-muted">Everything organized. Automatically.</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="p-6 space-y-2">
-                      {afterItems.map((item, i) => (
-                        <motion.div
-                          key={item.label}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: i * 0.08, duration: 0.3 }}
-                          className="flex items-center gap-4 p-3 rounded-xl border-2 border-ink bg-white hover:-translate-y-0.5 transition-transform duration-200"
-                        >
-                          <div className="w-6 h-6 rounded-lg border-2 border-ink bg-accent-green flex items-center justify-center flex-shrink-0">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                              <polyline points="20 6 9 17 4 12" />
-                            </svg>
-                          </div>
-                          <div className="flex-1">
-                            <div className="text-[13px] font-bold text-ink">{item.label}</div>
-                            <div className="text-[11px] font-medium text-ink-muted">{item.detail}</div>
-                          </div>
-                          <motion.div
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            transition={{ delay: 0.3 + i * 0.08, type: "spring" }}
-                            className="w-5 h-5 rounded-full border-2 border-ink bg-accent-green flex items-center justify-center"
-                          >
-                            <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4" strokeLinecap="round">
-                              <polyline points="20 6 9 17 4 12" />
-                            </svg>
-                          </motion.div>
-                        </motion.div>
-                      ))}
-                    </div>
-                  </div>
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="before"
-                  initial={{ opacity: 0, x: 40 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -40 }}
-                  transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                >
-                  <div className="tr-card overflow-hidden shadow-[0_6px_0_0_#1A1A1A] border-3 border-ink opacity-60">
-                    <div className="px-6 py-4 border-b-2 border-ink bg-pastel-pink/40">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-xl border-2 border-ink bg-white flex items-center justify-center">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1A1A1A" strokeWidth="2.5" strokeLinecap="round">
-                            <line x1="18" y1="6" x2="6" y2="18" />
-                            <line x1="6" y1="6" x2="18" y2="18" />
-                          </svg>
-                        </div>
-                        <div>
-                          <h3 className="text-[17px] font-extrabold text-ink">Without ThinkRoom</h3>
-                          <p className="text-[11px] font-medium text-ink-muted">Scattered. Disconnected. Manual.</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="p-6 space-y-2">
-                      {beforeItems.map((item, i) => (
-                        <motion.div
-                          key={item.label}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: i * 0.08, duration: 0.3 }}
-                          className="flex items-center gap-4 p-3 rounded-xl border-2 border-ink bg-white"
-                        >
-                          <div className="w-6 h-6 rounded-lg border-2 border-ink bg-paper flex items-center justify-center flex-shrink-0">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1A1A1A" strokeWidth="2.5" strokeLinecap="round">
-                              <line x1="18" y1="6" x2="6" y2="18" />
-                              <line x1="6" y1="6" x2="18" y2="18" />
-                            </svg>
-                          </div>
-                          <div className="flex-1">
-                            <div className="text-[13px] font-bold text-ink">{item.label}</div>
-                            <div className="text-[11px] font-medium text-ink-muted">{item.detail}</div>
-                          </div>
-                        </motion.div>
-                      ))}
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start max-w-6xl mx-auto">
+            <div className="md:col-span-4">
+              <ComparisonCard
+                title="Without ThinkRoom"
+                subtitle="Scattered. Manual. Forgotten."
+                rows={beforeRows}
+                headerBg="bg-pastel-pink/40"
+                rowBg="bg-pastel-pink/30"
+                headerEmoji="😵"
+              />
+            </div>
 
-            <AnimatePresence>
-              {showAfter && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.5, duration: 0.5 }}
-                  className="mt-6 text-center"
-                >
-                  <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl border-2 border-ink bg-pastel-green/30">
-                    <motion.div
-                      className="w-2 h-2 rounded-full bg-accent-green"
-                      animate={{ opacity: [1, 0.3, 1] }}
-                      transition={{ repeat: Infinity, duration: 1.5 }}
-                    />
-                    <span className="text-[12px] font-bold text-ink">Your team could be here</span>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            <div className="md:col-span-4 flex justify-center">
+              <CenterPipeline />
+            </div>
+
+            <div className="md:col-span-4">
+              <ComparisonCard
+                title="With ThinkRoom"
+                subtitle="Organized. Automatic. AI-powered."
+                rows={afterRows}
+                headerBg="bg-pastel-green/40"
+                rowBg="bg-pastel-green/30"
+                headerEmoji="✨"
+              />
+            </div>
           </div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.5, duration: 0.5 }}
+            className="text-center mt-12"
+          >
+            <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl border-2 border-ink bg-pastel-green/40">
+              <motion.div
+                className="w-2 h-2 rounded-full bg-accent-green"
+                animate={{ opacity: [1, 0.3, 1] }}
+                transition={{ repeat: Infinity, duration: 1.5 }}
+              />
+              <span className="text-[12px] font-bold text-ink">
+                Teams save <AnimatedCounter value={8} suffix="+" /> hours every
+                week
+              </span>
+            </div>
+          </motion.div>
         </div>
       </section>
     </>
