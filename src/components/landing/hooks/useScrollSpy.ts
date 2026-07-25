@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 
 export function useScrollSpy(
   sectionIds: string[],
-  rootMargin = "-40% 0px -50% 0px"
+  rootMargin = "-30% 0px -60% 0px"
 ): string {
   const [activeId, setActiveId] = useState(sectionIds[0]);
   const visibleRef = useRef(new Set<string>());
@@ -22,6 +22,8 @@ export function useScrollSpy(
           }
         });
 
+        if (visible.size === 0) return;
+
         let current = sectionIds[0];
         for (const id of sectionIds) {
           if (visible.has(id)) {
@@ -30,7 +32,7 @@ export function useScrollSpy(
         }
         setActiveId(current);
       },
-      { rootMargin, threshold: 0.05 }
+      { rootMargin, threshold: 0 }
     );
 
     const elements: HTMLElement[] = [];

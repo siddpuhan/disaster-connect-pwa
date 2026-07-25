@@ -15,7 +15,6 @@ const sectionNavMap: Record<string, string> = {
   product: "#product",
   "ai-superpowers": "#ai-superpowers",
   "how-thinkroom-thinks": "#how-thinkroom-thinks",
-  comparison: "#faq",
   faq: "#faq",
 };
 
