@@ -122,8 +122,8 @@ function MobileDivider({ index }: { index: number }) {
 export default function HowItWorks() {
   return (
     <>
-      <WavySeparator color="#FEFCF3" />
-      <section id="how-thinkroom-thinks" className="tr-section-padding bg-ivory">
+      <WavySeparator color="#FFF7F8" />
+      <section id="how-thinkroom-thinks" className="tr-section-padding" style={{ background: "#FAF8F3" }}>
         <div className="tr-container-wide">
           <motion.div
             initial={{ opacity: 0, y: 30 }}

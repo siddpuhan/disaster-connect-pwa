@@ -31,8 +31,8 @@ export default function FAQ() {
 
   return (
     <>
-      <WavySeparator color="#FFFDF7" />
-      <section id="faq" className="tr-section-padding">
+      <WavySeparator color="#FFF3F5" />
+      <section id="faq" className="tr-section-padding" style={{ background: "#FFFFFF" }}>
         <div className="tr-container-wide">
           <motion.div
             initial={{ opacity: 0, y: 30 }}

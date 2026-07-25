@@ -318,8 +318,8 @@ function ShowcaseRow({
 export default function Features() {
   return (
     <>
-      <WavySeparator color="#FFFDF7" />
-      <section id="ai-superpowers" className="tr-section-padding overflow-hidden">
+      <WavySeparator color="#FFFFFF" />
+      <section id="ai-superpowers" className="tr-section-padding overflow-hidden" style={{ background: "#FFF7F8" }}>
         <div className="tr-container-wide">
           <motion.div
             initial={{ opacity: 0, y: 30 }}

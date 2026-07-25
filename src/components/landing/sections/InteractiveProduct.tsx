@@ -102,8 +102,8 @@ export default function InteractiveProduct() {
 
   return (
     <>
-      <WavySeparator color="#FEFCF3" />
-      <section id="product" className="tr-section-padding bg-ivory">
+      <WavySeparator color="#FAF8F3" />
+      <section id="product" className="tr-section-padding" style={{ background: "#FFFFFF" }}>
         <div className="tr-container-wide">
           <motion.div
             initial={{ opacity: 0, y: 30 }}

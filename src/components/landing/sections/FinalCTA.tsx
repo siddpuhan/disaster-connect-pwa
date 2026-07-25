@@ -48,7 +48,7 @@ function FloatingFragments() {
       {[0, 1, 2, 3].map((i) => (
         <motion.div
           key={`particle-${i}`}
-          className="absolute w-1 h-1 rounded-full bg-accent-purple/40"
+          className="absolute w-1 h-1 rounded-full bg-accent-purple/15"
           style={{ left: `${20 + i * 20}%`, top: `${30 + (i % 2) * 30}%` }}
           animate={{
             y: [0, -20, 0],
@@ -87,8 +87,8 @@ function CountUp({ end, suffix = "" }: { end: number; suffix?: string }) {
 export default function FinalCTA({ onGetStarted }: { onGetStarted?: () => void }) {
   return (
     <>
-      <WavySeparator color="#E5DEFF" />
-      <section className="tr-section-padding bg-pastel-purple/30 overflow-hidden relative">
+      <WavySeparator color="#FFFFFF" />
+      <section className="tr-section-padding overflow-hidden relative" style={{ background: "#FAF8F3" }}>
         <FloatingFragments />
 
         <div className="tr-container-wide relative z-10">
@@ -139,7 +139,7 @@ export default function FinalCTA({ onGetStarted }: { onGetStarted?: () => void }
                   <path d="M3 8h10M9 4l4 4-4 4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </MagneticButton>
-              <MagneticButton variant="secondary" className="!text-[16px] !px-8 !py-4">
+              <MagneticButton variant="secondary" className="!text-[16px] !px-8 !py-4" onClick={() => window.open('https://youtu.be/Aq5WXmQQooo?si=GydMz-X8s0BIVYRs', '_blank')}>
                 Watch Live Demo
               </MagneticButton>
             </motion.div>

@@ -231,10 +231,11 @@ function CenterPipeline() {
 export default function BeforeAfter() {
   return (
     <>
-      <WavySeparator color="#FEFCF3" />
+      <WavySeparator color="#FAF8F3" />
       <section
         id="comparison"
-        className="tr-section-padding bg-ivory overflow-hidden relative"
+        className="tr-section-padding overflow-hidden relative"
+        style={{ background: "#FFF3F5" }}
       >
         <div
           className="absolute inset-0 opacity-[0.03] pointer-events-none"
@@ -244,8 +245,8 @@ export default function BeforeAfter() {
             backgroundSize: "32px 32px",
           }}
         />
-        <div className="absolute top-32 left-10 w-72 h-72 rounded-full bg-pastel-purple/10 pointer-events-none" />
-        <div className="absolute bottom-32 right-10 w-96 h-96 rounded-full bg-pastel-blue/10 pointer-events-none" />
+        <div className="absolute top-32 left-10 w-72 h-72 rounded-full bg-accent-purple/6 pointer-events-none" />
+        <div className="absolute bottom-32 right-10 w-96 h-96 rounded-full bg-pastel-pink/40 pointer-events-none" />
 
         <div className="tr-container-wide relative z-10">
           <motion.div

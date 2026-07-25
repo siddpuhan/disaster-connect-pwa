@@ -611,9 +611,9 @@ function BrowserDemo() {
               height: `${2 + (i % 2) * 2}px`,
               left: `${8 + i * 18}%`,
               top: `${10 + (i * 13) % 75}%`,
-              opacity: 0.2,
+              opacity: 0.08,
             }}
-            animate={{ y: [0, -12, 0], opacity: [0.15, 0.35, 0.15] }}
+            animate={{ y: [0, -12, 0], opacity: [0.08, 0.2, 0.08] }}
             transition={{ repeat: Infinity, duration: 4 + (i % 3) * 2, delay: i * 0.6, ease: "easeInOut" }}
           />
         ))}
@@ -623,17 +623,17 @@ function BrowserDemo() {
       <motion.div
         className="absolute -top-6 -right-6 w-32 h-32 rounded-full pointer-events-none"
         style={{
-          background: "radial-gradient(circle, rgba(124,92,252,0.08), transparent 70%)",
+          background: "radial-gradient(circle, rgba(124,92,252,0.06), transparent 70%)",
         }}
-        animate={{ scale: [1, 1.15, 1], opacity: [0.5, 0.8, 0.5] }}
+        animate={{ scale: [1, 1.1, 1], opacity: [0.3, 0.5, 0.3] }}
         transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
       />
       <motion.div
         className="absolute -bottom-4 -left-4 w-24 h-24 rounded-full pointer-events-none"
         style={{
-          background: "radial-gradient(circle, rgba(124,92,252,0.05), transparent 70%)",
+          background: "radial-gradient(circle, rgba(124,92,252,0.04), transparent 70%)",
         }}
-        animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.6, 0.3] }}
+        animate={{ scale: [1, 1.15, 1], opacity: [0.2, 0.4, 0.2] }}
         transition={{ repeat: Infinity, duration: 4, ease: "easeInOut", delay: 1 }}
       />
     </div>
@@ -642,14 +642,14 @@ function BrowserDemo() {
 
 export default function Hero({ onGetStarted }: { onGetStarted?: () => void }) {
   return (
-    <section id="hero" className="tr-section-padding pt-32 md:pt-36 lg:pt-40 overflow-hidden relative">
+    <section id="hero" className="tr-section-padding pt-32 md:pt-36 lg:pt-40 overflow-hidden relative" style={{ background: "#FAF8F3" }}>
       <div className="absolute inset-0 overflow-hidden pointer-events-none select-none">
         {[0, 1, 2, 3, 4, 5].map((i) => (
           <motion.div
             key={`dot-${i}`}
-            className="absolute w-2 h-2 rounded-full bg-ink/10 border border-ink/20"
+            className="absolute w-2 h-2 rounded-full bg-accent-purple/8 border border-accent-purple/15"
             style={{ left: `${8 + i * 18}%`, top: `${5 + (i % 3) * 38}%` }}
-            animate={{ y: [0, -10, 0], opacity: [0.2, 0.5, 0.2] }}
+            animate={{ y: [0, -10, 0], opacity: [0.15, 0.35, 0.15] }}
             transition={{ repeat: Infinity, duration: 3 + (i % 3), delay: i * 0.5, ease: "easeInOut" }}
           />
         ))}
@@ -699,7 +699,7 @@ export default function Hero({ onGetStarted }: { onGetStarted?: () => void }) {
                   <path d="M3 8h10M9 4l4 4-4 4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </MagneticButton>
-              <MagneticButton variant="secondary" className="!text-[15px] !px-7 !py-3.5">
+              <MagneticButton variant="secondary" className="!text-[15px] !px-7 !py-3.5" onClick={() => window.open('https://youtu.be/Aq5WXmQQooo?si=GydMz-X8s0BIVYRs', '_blank')}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="mr-1.5">
                   <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2z" stroke="#1A1A1A" strokeWidth="2" />
                   <path d="M9.5 8.5v7l6-3.5-6-3.5z" fill="#1A1A1A" />

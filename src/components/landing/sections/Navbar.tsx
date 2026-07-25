@@ -103,14 +103,14 @@ export default function Navbar({ onSignIn, onGetStarted }: { onSignIn?: () => vo
                 onClick={() => scrollToSection(item.href)}
                 className="relative px-4 py-1.5 rounded-full text-sm font-medium tracking-[-0.01em] outline-none focus:outline-none"
                 style={{
-                  color: isActive ? "#FFFFFF" : "rgba(26, 26, 26, 0.55)",
+                  color: isActive ? "#1A1A1A" : "rgba(26, 26, 26, 0.55)",
                 }}
               >
                 {isActive && (
                   <motion.span
                     layoutId="navPill"
                     className="absolute inset-0 rounded-full"
-                    style={{ background: "#7C5CFC" }}
+                    style={{ background: "#C9A0E0" }}
                     transition={{
                       type: "spring",
                       stiffness: 400,
@@ -206,8 +206,8 @@ export default function Navbar({ onSignIn, onGetStarted }: { onSignIn?: () => vo
                     }}
                     className="text-sm font-medium px-3 py-2.5 rounded-xl transition-colors duration-200 text-left outline-none focus:outline-none"
                     style={{
-                      color: isActive ? "#FFFFFF" : "rgba(26,26,26,0.55)",
-                      background: isActive ? "#7C5CFC" : "transparent",
+                      color: isActive ? "#1A1A1A" : "rgba(26,26,26,0.55)",
+                      background: isActive ? "#C9A0E0" : "transparent",
                     }}
                   >
                     {item.label}
