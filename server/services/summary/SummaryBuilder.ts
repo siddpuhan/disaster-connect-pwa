@@ -61,10 +61,10 @@ Focus on: Messages missed, tasks assigned, decisions finalized, important discus
     }
 
     try {
-      logger.info("SUMMARY_BUILDER", `📡 Calling Groq API (model: llama-3.3-70b-versatile)...`);
+      logger.info("SUMMARY_BUILDER", `📡 Calling Groq API (model: openai/gpt-oss-120b)...`);
 
       const completion = await withGroqRetry(() => groq.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
+        model: "openai/gpt-oss-120b",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: `Conversation:\n${conversationText}` }

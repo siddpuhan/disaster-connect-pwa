@@ -9,14 +9,17 @@ import { logger } from "../../utils/logger.js";
 import { Server } from "socket.io";
 
 export class AIWorker {
-  // Configurable debounce window in milliseconds (10 seconds)
-  private static readonly DEBOUNCE_MS = 10000;
-  
-  // Track active timers per room
+  // Debounce window in milliseconds (8 seconds)
+  private static readonly DEBOUNCE_MS = 8000;
+
+  // Active timers per room
   private static timers = new Map<string, ReturnType<typeof setTimeout>>();
-  
-  // Track active AbortControllers per room to cancel in-flight requests
+
+  // Active AbortControllers per room
   private static abortControllers = new Map<string, AbortController>();
+
+  // In-memory mutex per room for fast single-process debouncing
+  private static activeRooms = new Set<string>();
 
   /**
    * Structured logging helper.
@@ -26,7 +29,7 @@ export class AIWorker {
   }
 
   /**
-   * Enqueues a message for processing in a specific room.
+   * Enqueues a room for AI processing.
    * Debounces execution and cancels any in-flight requests.
    */
   static enqueueMessage(
@@ -36,28 +39,24 @@ export class AIWorker {
   ) {
     this.logStage("MESSAGE_QUEUED", { roomId, messageId: message.id });
 
-    // 1. Cancel existing debounce timer for this room
     if (this.timers.has(roomId)) {
       clearTimeout(this.timers.get(roomId)!);
       this.timers.delete(roomId);
     }
 
-    // 2. Cancel in-flight Groq request for this room
     if (this.abortControllers.has(roomId)) {
       this.logStage("REQUEST_CANCELLED", { roomId });
       this.abortControllers.get(roomId)!.abort();
       this.abortControllers.delete(roomId);
     }
 
-    // 3. Create a new AbortController for the next run
     const abortController = new AbortController();
     this.abortControllers.set(roomId, abortController);
 
-    // 4. Schedule the next burst extraction
     const timer = setTimeout(async () => {
       this.timers.delete(roomId);
       try {
-        await this.processBurst(roomId, message.id, message.user_id || null, io, abortController.signal);
+        await this.processBurst(roomId, message.user_id || null, io, abortController.signal);
       } catch (err: any) {
         if (err.name === "AbortError" || err.message?.includes("aborted")) {
           this.logStage("PIPELINE_ABORTED", { roomId });
@@ -75,55 +74,116 @@ export class AIWorker {
   }
 
   /**
-   * Runs the unified Groq AI extraction burst on a conversation window.
+   * Runs the incremental Groq AI extraction burst on new unprocessed messages.
+   * Uses PostgreSQL transactional advisory lock (`pg_try_advisory_xact_lock`) to serialize
+   * cross-process execution safely.
    */
-  private static async processBurst(
+  static async processBurst(
     roomId: string,
-    sourceMessageId: string,
     userId: string | null,
     io: Server,
-    signal: AbortSignal
+    signal?: AbortSignal
   ) {
     if (!groq) {
       logger.warn("AI-WORKER", "Groq client is not configured. Skipping background analysis.");
       return;
     }
 
-    this.logStage("AI_GROQ_STARTED", { roomId, messageId: sourceMessageId });
-    io.to(roomId).emit("task_generation_status", { status: "generating" });
+    // In-process fast lock
+    if (this.activeRooms.has(roomId)) {
+      this.logStage("AI_WORKER_BUSY_IN_MEMORY", { roomId, message: "Room processing in-flight in this process." });
+      return;
+    }
+
+    this.activeRooms.add(roomId);
+    const pool = getDB();
+    const dbClient = await pool.connect();
 
     try {
-      const pool = getDB();
+      // 1. Begin DB transaction and acquire PostgreSQL transaction-scoped advisory lock
+      await dbClient.query('BEGIN');
 
-      // 1. Fetch the last 20 messages for context
-      const historyResult = await pool.query(
-        `SELECT text, sender_name, created_at FROM messages WHERE room_id = $1 ORDER BY created_at DESC LIMIT 20`,
+      const lockRes = await dbClient.query(
+        `SELECT pg_try_advisory_xact_lock(hashtext($1)) as acquired`,
         [roomId]
       );
-      const messagesWindow = historyResult.rows.reverse();
 
-      if (messagesWindow.length === 0) {
-        this.logStage("AI_GROQ_SKIPPED", { roomId, reason: "empty_window" });
+      if (!lockRes.rows[0]?.acquired) {
+        this.logStage("AI_WORKER_BUSY_DB_LOCK", { roomId, message: "Room processing locked by another process." });
+        await dbClient.query('ROLLBACK');
         return;
       }
 
-      // 2. Fetch the rolling summary from the database
-      const summaryResult = await pool.query(
+      // 2. Fetch current watermark cursor for room within transaction
+      const cursorResult = await dbClient.query(
+        `SELECT last_analyzed_message_id, last_analyzed_created_at
+         FROM room_ai_cursors WHERE room_id = $1 FOR UPDATE`,
+        [roomId]
+      );
+      const cursorRow = cursorResult.rows[0];
+
+      let newMessages: Array<{ id: string; text: string; sender_name: string; created_at: Date }> = [];
+      let previousCursorDesc = "None (Start of room history)";
+
+      if (cursorRow && cursorRow.last_analyzed_created_at) {
+        previousCursorDesc = `${cursorRow.last_analyzed_message_id || 'N/A'} (${cursorRow.last_analyzed_created_at.toISOString()})`;
+        // Compound watermark comparison: created_at > cursor.created_at OR (created_at = cursor.created_at AND id > cursor.message_id) ORDER BY created_at ASC, id ASC
+        const newMsgResult = await dbClient.query(
+          `SELECT id, text, sender_name, created_at FROM messages
+           WHERE room_id = $1
+             AND (created_at > $2 OR (created_at = $2 AND id > $3))
+           ORDER BY created_at ASC, id ASC`,
+          [roomId, cursorRow.last_analyzed_created_at, cursorRow.last_analyzed_message_id || '00000000-0000-0000-0000-000000000000']
+        );
+        newMessages = newMsgResult.rows;
+      } else {
+        // First run for room: fetch all messages ordered chronologically
+        const newMsgResult = await dbClient.query(
+          `SELECT id, text, sender_name, created_at FROM messages
+           WHERE room_id = $1
+           ORDER BY created_at ASC, id ASC`,
+          [roomId]
+        );
+        newMessages = newMsgResult.rows;
+      }
+
+      if (newMessages.length === 0) {
+        this.logStage("AI_GROQ_SKIPPED", { roomId, reason: "no_unprocessed_messages" });
+        await dbClient.query('COMMIT');
+        return;
+      }
+
+      // 3. Fetch up to 10 historical messages prior to the first unprocessed message for background context ONLY
+      const firstNewMsg = newMessages[0];
+      const historyResult = await dbClient.query(
+        `SELECT id, text, sender_name, created_at FROM messages
+         WHERE room_id = $1
+           AND (created_at < $2 OR (created_at = $2 AND id < $3))
+         ORDER BY created_at DESC, id DESC
+         LIMIT 10`,
+        [roomId, firstNewMsg.created_at, firstNewMsg.id]
+      );
+      const historicalMessages = historyResult.rows.reverse();
+
+      // 4. Fetch rolling summary
+      const summaryResult = await dbClient.query(
         `SELECT content FROM summaries WHERE room_id = $1 LIMIT 1`,
         [roomId]
       );
       const rollingSummary = summaryResult.rows[0]?.content || "";
 
-      // 3. Compile prompt
+      // 5. Compile prompts
       const systemPrompt = GroqPromptManager.getSystemPrompt(rollingSummary);
-      const userPrompt = GroqPromptManager.formatUserPrompt(messagesWindow);
+      const userPrompt = GroqPromptManager.formatUserPrompt(historicalMessages, newMessages);
 
-      // 4. Call Groq with abort signal support
+      this.logStage("AI_GROQ_STARTED", { roomId, newMessagesCount: newMessages.length, historyCount: historicalMessages.length });
+      io.to(roomId).emit("task_generation_status", { status: "generating" });
+
+      // 6. Call Groq
       const completion = await withGroqRetry((retrySignal) => {
-        // Blend enqueued abort controller signal with exponential backoff signal if needed
         const activeSignal = signal || retrySignal;
         return groq.chat.completions.create({
-          model: "llama-3.3-70b-versatile",
+          model: "openai/gpt-oss-120b",
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt }
@@ -135,64 +195,71 @@ export class AIWorker {
       });
 
       const rawJson = completion.choices[0]?.message?.content || "";
-      this.logStage("AI_GROQ_FINISHED", { roomId, responseLength: rawJson.length });
-
       if (!rawJson.trim()) {
         throw new Error("Received empty response payload from Groq.");
       }
 
-      // 5. Parse JSON
       const payload: GroqPayload = GroqJsonParser.parse(rawJson);
-      this.logStage("PARSER_COMPLETE", { 
-        roomId, 
-        tasks: payload.tasks?.length || 0, 
-        notes: payload.notes?.length || 0, 
-        documents: payload.documents?.length || 0,
-        hasSummary: !!payload.summary,
-        confidence: payload.confidence
-      });
+
+      // 7. Server-Side sourceMessageId Validation
+      const validNewMsgIds = new Set(newMessages.map((m) => m.id));
+      const fallbackSourceId = newMessages[newMessages.length - 1].id;
+
+      const sanitizeSourceId = (idCandidate?: string | null): string => {
+        if (idCandidate && validNewMsgIds.has(idCandidate)) {
+          return idCandidate;
+        }
+        return fallbackSourceId;
+      };
+
+      // Tracking metrics for structured logging
+      let tasksExtracted = payload.tasks?.length || 0;
+      let tasksInserted = 0;
+      let tasksUpdated = 0;
+      let tasksSkipped = 0;
+
+      let notesExtracted = payload.notes?.length || 0;
+      let notesInserted = 0;
+      let notesSkipped = 0;
+
+      let docsExtracted = payload.documents?.length || 0;
+      let docsInserted = 0;
+      let docsUpdated = 0;
+      let docsSkipped = 0;
 
       const timestamp = new Date().toISOString();
+      const eventsToEmit: Array<{ eventName: string; payload: any }> = [];
 
-      // 6. Persist Rolling Summary & emit update event
+      // 8. DB Persistence (within transaction)
+
+      // A. Summary update
       if (payload.summary) {
-        await pool.query(
+        await dbClient.query(
           `INSERT INTO summaries (room_id, content, confidence, updated_at)
            VALUES ($1, $2, $3, NOW())
            ON CONFLICT (room_id)
            DO UPDATE SET content = EXCLUDED.content, confidence = EXCLUDED.confidence, updated_at = NOW()`,
           [roomId, payload.summary, payload.confidence]
         );
-        this.logStage("SUMMARY_SAVED", { roomId });
-        io.to(roomId).emit("summary_updated", {
-          roomId,
-          summary: payload.summary,
-          messageId: sourceMessageId,
-          timestamp,
-          userId
+        eventsToEmit.push({
+          eventName: "summary_updated",
+          payload: { roomId, summary: payload.summary, messageId: fallbackSourceId, timestamp, userId }
         });
       }
 
-      // 7. Process extracted Tasks (Deduplication + Save + Socket)
+      // B. Process Tasks
       if (payload.tasks && payload.tasks.length > 0) {
-        this.logStage("TASKS_FOUND", { count: payload.tasks.length });
         for (const task of payload.tasks) {
-          // Lower confidence threshold for conversational tasks
-          if (task.confidence < 0.6) continue;
-
-          // Deduplicate: check if a pending task with similar title already exists
-          const dupResult = await pool.query(
-            `SELECT id FROM tasks WHERE room_id = $1 AND title = $2 AND status = 'pending' AND is_deleted = false LIMIT 1`,
-            [roomId, task.title]
-          );
-          if (dupResult.rows.length > 0) {
-            logger.info("AI-WORKER", `Skipped duplicate task: "${task.title}"`);
+          if (task.confidence < 0.6) {
+            tasksSkipped++;
             continue;
           }
 
-          const newTask = await TaskService.create({
+          const targetSourceId = sanitizeSourceId(task.source_message_id);
+
+          const result = await TaskService.upsertTask({
             roomId,
-            sourceMessageId: sourceMessageId,
+            sourceMessageId: targetSourceId,
             title: task.title,
             description: "",
             assignedTo: task.assigned_to,
@@ -202,41 +269,61 @@ export class AIWorker {
             confidence: task.confidence,
             aiGenerated: true,
             createdBy: "AI_SYSTEM"
-          });
+          }, dbClient);
 
-          this.logStage("TASK_SAVED", { id: newTask.id, roomId, title: newTask.title });
-          
-          // Emit socket event ONLY after successful DB insert
-          io.to(roomId).emit("task_created", {
-            id: newTask.id,
-            roomId,
-            sourceMessageId,
-            title: newTask.title,
-            description: newTask.description,
-            assignedToName: newTask.assigned_to_name,
-            priority: newTask.priority,
-            status: newTask.status,
-            deadline: newTask.deadline,
-            confidence: newTask.confidence,
-            aiGenerated: true,
-            createdBy: "AI_SYSTEM",
-            timestamp,
-            userId
-          });
+          if (result.action === 'created') {
+            tasksInserted++;
+            eventsToEmit.push({
+              eventName: "task_created",
+              payload: {
+                id: result.task.id,
+                roomId,
+                sourceMessageId: targetSourceId,
+                title: result.task.title,
+                description: result.task.description,
+                assignedToName: result.task.assigned_to_name,
+                priority: result.task.priority,
+                status: result.task.status,
+                deadline: result.task.deadline,
+                confidence: result.task.confidence,
+                aiGenerated: true,
+                createdBy: "AI_SYSTEM",
+                timestamp,
+                userId
+              }
+            });
+          } else if (result.action === 'updated') {
+            tasksUpdated++;
+            eventsToEmit.push({
+              eventName: "task_updated",
+              payload: {
+                ...result.task,
+                assignedToName: result.task.assigned_to_name || null,
+                timestamp,
+                userId
+              }
+            });
+          } else {
+            tasksSkipped++;
+          }
         }
       }
 
-      // 8. Process extracted Notes (Deduplication + Save + Socket)
+      // C. Process Notes
       if (payload.notes && payload.notes.length > 0) {
-        this.logStage("NOTES_FOUND", { count: payload.notes.length });
         for (const note of payload.notes) {
-          if (note.confidence < 0.6) continue;
-
-          const isDuplicate = await NotesService.isDuplicate(roomId, note.type, note.content);
-          if (isDuplicate) {
-            logger.info("AI-WORKER", `Skipped duplicate note: "${note.content.substring(0, 30)}..."`);
+          if (note.confidence < 0.6) {
+            notesSkipped++;
             continue;
           }
+
+          const isDup = await NotesService.isDuplicate(roomId, note.type, note.content, dbClient);
+          if (isDup) {
+            notesSkipped++;
+            continue;
+          }
+
+          const targetSourceId = sanitizeSourceId(note.source_message_id);
 
           const newNote = await NotesService.create({
             roomId,
@@ -244,40 +331,39 @@ export class AIWorker {
             title: note.content.substring(0, 80),
             content: note.content,
             confidence: note.confidence,
-            createdBy: "AI_SYSTEM"
-          });
+            createdBy: "AI_SYSTEM",
+            sourceMessageId: targetSourceId
+          }, dbClient);
 
-          this.logStage("NOTE_SAVED", { id: newNote.id, roomId, type: newNote.type });
-          
-          // Emit socket event ONLY after successful DB insert
-          io.to(roomId).emit("note_created", {
-            id: newNote.id,
-            roomId,
-            sourceMessageId,
-            type: newNote.type,
-            title: newNote.title,
-            content: newNote.content,
-            confidence: newNote.confidence,
-            timestamp,
-            userId
+          notesInserted++;
+          eventsToEmit.push({
+            eventName: "note_created",
+            payload: {
+              id: newNote.id,
+              roomId,
+              sourceMessageId: targetSourceId,
+              type: newNote.type,
+              title: newNote.title,
+              content: newNote.content,
+              confidence: newNote.confidence,
+              timestamp,
+              userId
+            }
           });
         }
       }
 
-      // 9. Process extracted Documents (Deduplication + Save + Socket)
+      // D. Process Documents
       if (payload.documents && payload.documents.length > 0) {
-        this.logStage("DOCUMENTS_FOUND", { count: payload.documents.length });
         for (const doc of payload.documents) {
-          // Lower confidence threshold for documents - generate for meaningful discussions
-          if (doc.confidence < 0.65) continue;
-
-          const isDuplicate = await DocumentService.isDuplicate(roomId, doc.title);
-          if (isDuplicate) {
-            logger.info("AI-WORKER", `Skipped duplicate document: "${doc.title}"`);
+          if (doc.confidence < 0.65) {
+            docsSkipped++;
             continue;
           }
 
-          const newDoc = await DocumentService.create({
+          const targetSourceId = sanitizeSourceId(doc.source_message_id);
+
+          const result = await DocumentService.upsertDocument({
             roomId,
             category: doc.type,
             title: doc.title,
@@ -285,31 +371,87 @@ export class AIWorker {
             summary: doc.content.substring(0, 200) + "...",
             content: doc.content,
             participants: [],
-            sourceMessages: [],
-            confidence: doc.confidence
-          });
+            sourceMessages: [targetSourceId],
+            confidence: doc.confidence,
+            sourceMessageId: targetSourceId
+          }, dbClient);
 
-          this.logStage("DOCUMENT_SAVED", { id: newDoc.id, roomId, title: newDoc.title });
-          
-          // Emit socket event ONLY after successful DB insert
-          io.to(roomId).emit("document_created", {
-            id: newDoc.id,
-            roomId,
-            sourceMessageId,
-            category: newDoc.category,
-            title: newDoc.title,
-            status: newDoc.status,
-            summary: newDoc.summary,
-            content: newDoc.content,
-            timestamp,
-            userId
-          });
+          if (result.action === 'created') {
+            docsInserted++;
+            eventsToEmit.push({
+              eventName: "document_created",
+              payload: {
+                id: result.document.id,
+                roomId,
+                sourceMessageId: targetSourceId,
+                category: result.document.category,
+                title: result.document.title,
+                status: result.document.status,
+                summary: result.document.summary,
+                content: result.document.content,
+                timestamp,
+                userId
+              }
+            });
+          } else if (result.action === 'updated') {
+            docsUpdated++;
+            eventsToEmit.push({
+              eventName: "document_updated",
+              payload: {
+                ...result.document,
+                timestamp,
+                userId
+              }
+            });
+          } else {
+            docsSkipped++;
+          }
         }
       }
 
-      this.logStage("PIPELINE_COMPLETED", { roomId, messageId: sourceMessageId });
+      // E. Advance Watermark Cursor ONLY AFTER all extractions persist!
+      const latestProcessedMsg = newMessages[newMessages.length - 1];
+      await dbClient.query(
+        `INSERT INTO room_ai_cursors (room_id, last_analyzed_message_id, last_analyzed_created_at, updated_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (room_id)
+         DO UPDATE SET last_analyzed_message_id = EXCLUDED.last_analyzed_message_id,
+                       last_analyzed_created_at = EXCLUDED.last_analyzed_created_at,
+                       updated_at = NOW()`,
+        [roomId, latestProcessedMsg.id, latestProcessedMsg.created_at]
+      );
 
+      // Commit DB transaction (automatically releases pg_try_advisory_xact_lock)
+      await dbClient.query('COMMIT');
+
+      const newCursorDesc = `${latestProcessedMsg.id} (${latestProcessedMsg.created_at.toISOString()})`;
+
+      // Output Required Development Log Format
+      console.log(`\nAI Worker:`);
+      console.log(`room=${roomId}`);
+      console.log(`previousCursor=${previousCursorDesc}`);
+      console.log(`newMessages=[${newMessages.map((m) => m.id).join(", ")}]`);
+      console.log(`groqInputMessages=${newMessages.length}`);
+      console.log(`tasks: extracted=${tasksExtracted} inserted=${tasksInserted} updated=${tasksUpdated} skipped=${tasksSkipped}`);
+      console.log(`notes: extracted=${notesExtracted} inserted=${notesInserted} skipped=${notesSkipped}`);
+      console.log(`documents: extracted=${docsExtracted} inserted=${docsInserted} updated=${docsUpdated} skipped=${docsSkipped}`);
+      console.log(`newCursor=${newCursorDesc}\n`);
+
+      // 9. Post-Commit Socket.IO Emissions (Socket.IO delivery failure does NOT rollback DB)
+      for (const ev of eventsToEmit) {
+        try {
+          io.to(roomId).emit(ev.eventName, ev.payload);
+        } catch (socketErr: any) {
+          logger.warn("AI-WORKER", `Socket event emission failed post-commit (${ev.eventName}): ${socketErr.message}`);
+        }
+      }
+
+    } catch (err: any) {
+      await dbClient.query('ROLLBACK');
+      throw err;
     } finally {
+      dbClient.release();
+      this.activeRooms.delete(roomId);
       io.to(roomId).emit("task_generation_status", { status: "idle" });
     }
   }

@@ -9,9 +9,18 @@ export const fetchMessagesApi = async (token, roomId) => {
   }
 
   const queryParams = roomId ? `?roomId=${encodeURIComponent(roomId)}` : '';
-  const response = await fetch(`${BASE_URL}/api/messages${queryParams}`, {
-    headers,
-  });
+
+  let response;
+  try {
+    response = await fetch(`${BASE_URL}/api/messages${queryParams}`, {
+      headers,
+    });
+  } catch (err) {
+    if (err instanceof TypeError && err.message === 'Failed to fetch') {
+      throw new Error('Cannot connect to server. Please make sure the backend is running on port 5000.');
+    }
+    throw err;
+  }
 
   if (!response.ok) {
     throw new Error(`Failed to fetch messages: ${response.status}`);
@@ -29,22 +38,30 @@ export const sendMessageApi = async (text, sender_id, token = null, sender_name 
   const headers = {
     'Content-Type': 'application/json',
   };
-  
+
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${BASE_URL}/api/messages`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ 
-      id,
-      text, 
-      sender_id,
-      sender_name,
-      room_id
-    }),
-  });
+  let response;
+  try {
+    response = await fetch(`${BASE_URL}/api/messages`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        id,
+        text,
+        sender_id,
+        sender_name,
+        room_id
+      }),
+    });
+  } catch (err) {
+    if (err instanceof TypeError && err.message === 'Failed to fetch') {
+      throw new Error('Cannot connect to server. Please make sure the backend is running on port 5000.');
+    }
+    throw err;
+  }
 
   if (!response.ok) {
     throw new Error(`Failed to send message: ${response.status}`);

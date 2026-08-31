@@ -6,12 +6,14 @@ export interface ExtractedTask {
   priority: string;
   deadline: string | null;
   confidence: number;
+  source_message_id?: string;
 }
 
 export interface ExtractedNote {
   type: string;
   content: string;
   confidence: number;
+  source_message_id?: string;
 }
 
 export interface ExtractedDocument {
@@ -19,6 +21,7 @@ export interface ExtractedDocument {
   title: string;
   content: string;
   confidence: number;
+  source_message_id?: string;
 }
 
 export interface GroqPayload {
@@ -36,7 +39,6 @@ export class GroqJsonParser {
   static parse(rawResponse: string): GroqPayload {
     let cleaned = rawResponse.trim();
 
-    // Remove markdown codeblock tags if they exist
     if (cleaned.startsWith("```")) {
       cleaned = cleaned.replace(/^```(?:json)?\n?/i, "");
     }
@@ -56,12 +58,14 @@ export class GroqJsonParser {
           priority: ['low', 'medium', 'high', 'urgent'].includes(t.priority) ? t.priority : 'medium',
           deadline: typeof t.deadline === 'string' ? t.deadline : null,
           confidence: typeof t.confidence === 'number' ? t.confidence : 0.8,
+          source_message_id: typeof t.source_message_id === 'string' ? t.source_message_id.trim() : undefined
         })) : [],
         
         notes: Array.isArray(parsed.notes) ? parsed.notes.map((n: any) => ({
           type: typeof n.type === 'string' ? n.type.trim() : 'Observation',
           content: typeof n.content === 'string' ? n.content.trim() : '',
           confidence: typeof n.confidence === 'number' ? n.confidence : 0.8,
+          source_message_id: typeof n.source_message_id === 'string' ? n.source_message_id.trim() : undefined
         })) : [],
 
         documents: Array.isArray(parsed.documents) ? parsed.documents.map((d: any) => ({
@@ -69,6 +73,7 @@ export class GroqJsonParser {
           title: typeof d.title === 'string' ? d.title.trim() : '',
           content: typeof d.content === 'string' ? d.content.trim() : '',
           confidence: typeof d.confidence === 'number' ? d.confidence : 0.8,
+          source_message_id: typeof d.source_message_id === 'string' ? d.source_message_id.trim() : undefined
         })) : [],
 
         summary: typeof parsed.summary === 'string' ? parsed.summary.trim() : '',

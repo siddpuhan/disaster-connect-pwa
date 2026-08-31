@@ -15,9 +15,15 @@ export async function createClient() {
           return cookieStore.getAll();
         },
         setAll(cookiesToSet: Array<{ name: string; value: string; options?: Record<string, any> }>) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options);
-          });
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              cookieStore.set(name, value, options);
+            });
+          } catch {
+            // The `setAll` method was called from a Server Component or Middleware.
+            // In Next.js App Router, cookies can only be modified in a Server Action or Route Handler.
+            // Swallowing this error prevents SSR render crashes while allowing auth reading.
+          }
         },
       },
     }

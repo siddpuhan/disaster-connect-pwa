@@ -8,6 +8,7 @@
     "build": "next build",
     "lint": "eslint --config eslint.config.js .",
     "type-check": "tsc --noEmit && tsc --noEmit -p server/tsconfig.json",
+    "workspace:dedupe": "node --loader ts-node/esm server/scripts/dedupe.ts",
     "preview": "vite preview",
     "start": "next start"
   },

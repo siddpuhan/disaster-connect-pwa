@@ -14,26 +14,14 @@ export class AuthService {
    */
   public static requireAuth = async (req: any, res: any, next: NextFunction) => {
     try {
-      console.log("\n=========================");
-      console.log("REQUEST:", req.originalUrl);
-
       const authHeader = req.headers.authorization;
-      console.log("AUTH HEADER:", authHeader?.substring(0, 50));
 
       if (!authHeader?.startsWith("Bearer ")) {
-        console.log("❌ No Bearer token");
         return res.status(401).json({ error: "Missing authorization header" });
       }
 
       const token = authHeader.slice(7);
-
-      console.log("TOKEN LENGTH:", token.length);
-      console.log("SUPABASE URL:", SUPABASE_URL);
-
       const { data: { user }, error } = await supabase.auth.getUser(token);
-
-      console.log("USER:", user);
-      console.log("ERROR:", error);
 
       if (error || !user) {
         return res.status(401).json({
@@ -47,8 +35,6 @@ export class AuthService {
         email: user.email,
         ...(user.user_metadata || {}),
       };
-
-      console.log("✅ AUTH PASSED");
 
       next();
     } catch (e) {
@@ -96,7 +82,12 @@ export class AuthService {
       };
     }
     const { data: { user }, error } = await supabase.auth.getUser(token);
-    if (error || !user) {
+    if (error) {
+      console.error('[AuthService] Token validation failed:', error.message);
+      throw new Error('Invalid or expired token');
+    }
+    if (!user) {
+      console.error('[AuthService] Token validation returned no user');
       throw new Error('Invalid or expired token');
     }
     return {

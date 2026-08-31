@@ -128,7 +128,11 @@ export default function ChatPage() {
             })
           });
         } catch (error) {
-          console.error('Failed to sync user to database:', error);
+          if (error instanceof TypeError && error.message === 'Failed to fetch') {
+            console.warn('Backend server not reachable — user sync skipped. Start the server on port 5000.');
+          } else {
+            console.error('Failed to sync user to database:', error);
+          }
         }
       };
        syncUserToDB();
@@ -232,13 +236,22 @@ export default function ChatPage() {
   useEffect(() => {
     let socket;
     const initSocket = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token ?? null;
       socket = io(SOCKET_URL, {
-        auth: { token },
-        transports: ['websocket'],
-        reconnectionAttempts: 10,
-        reconnectionDelay: 1000
+        // Use a function so Socket.IO fetches a FRESH token on every
+        // connection / reconnection attempt — avoids the expired-token error.
+        auth: (cb) => {
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            cb({ token: session?.access_token ?? null });
+          }).catch(() => {
+            cb({ token: null });
+          });
+        },
+        transports: ['websocket', 'polling'],
+        withCredentials: true,
+        reconnectionAttempts: 15,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 10000,
+        timeout: 15000
       });
       socketRef.current = socket;
 
@@ -257,12 +270,45 @@ export default function ChatPage() {
       }
 
       socket.on('connect_error', (error) => {
-        console.error('Socket connection error:', error);
+        const msg = error.message || String(error);
+        if (msg.includes('websocket error') || msg.includes('ECONNREFUSED') || msg.includes('Failed to fetch')) {
+          console.warn('[SOCKET] Server unreachable — will retry connecting. Make sure the backend is running on port 5000.');
+        } else if (msg.includes('Authentication error') || msg.includes('token')) {
+          console.error('[SOCKET] Authentication error:', msg);
+          if (socket.active) {
+            console.log('[SOCKET] Auth error — disconnecting to trigger reconnect with fresh token');
+            socket.disconnect();
+          }
+        } else {
+          console.warn('[SOCKET] Connection error:', msg);
+        }
       });
 
-      socket.on('disconnect', () => {
-        console.log('[SOCKET] Disconnected');
+      socket.on('disconnect', (reason) => {
+        console.log('[SOCKET] ⚠️ Disconnected:', reason);
         setSocketInstance(null);
+        // If the server forcefully disconnected us, manually reconnect
+        if (reason === 'io server disconnect') {
+          socket.connect();
+        }
+      });
+
+      socket.on('reconnect', (attemptNumber) => {
+        console.log('[SOCKET] ✅ Reconnected after', attemptNumber, 'attempts');
+        setSocketInstance(socket);
+        // Re-join room after reconnection
+        if (activeRoomRef.current) {
+          socket.emit('join-room', activeRoomRef.current);
+          console.log('[SOCKET] Re-joined room after reconnect:', activeRoomRef.current);
+        }
+      });
+
+      socket.on('reconnect_attempt', (attemptNumber) => {
+        console.log('[SOCKET] 🔄 Reconnection attempt #' + attemptNumber);
+      });
+
+      socket.on('reconnect_error', (error) => {
+        console.warn('[SOCKET] Reconnection attempt failed:', error.message);
       });
 
       socket.on('message-delivered', ({ clientId }) => {
@@ -280,6 +326,10 @@ export default function ChatPage() {
         socketRef.current.off('message-delivered');
         socketRef.current.off('connect');
         socketRef.current.off('disconnect');
+        socketRef.current.off('connect_error');
+        socketRef.current.off('reconnect');
+        socketRef.current.off('reconnect_attempt');
+        socketRef.current.off('reconnect_error');
         socketRef.current.disconnect();
         socketRef.current = null;
         setSocketInstance(null);
@@ -419,7 +469,11 @@ useEffect(() => {
         setMessages((prev) => mergeMessages(allMessages, prev));
       } catch (error) {
         console.error('Error fetching messages:', error);
-        setMessageError('Failed to load messages');
+        if (error.message?.includes('Cannot connect to server') || error.message?.includes('Failed to fetch')) {
+          setMessageError('Cannot connect to the server. Make sure the backend is running on port 5000.');
+        } else {
+          setMessageError('Failed to load messages');
+        }
       } finally {
         setLoadingMessages(false);
       }
@@ -462,9 +516,13 @@ useEffect(() => {
             queuedMessage.clientId
           );
           socketRef.current?.emit('send_message', {
-            ...savedMessage,
-            clientId: queuedMessage.clientId,
-            status: 'sent',
+            roomId: activeRoomRef.current,
+            message: {
+              ...savedMessage,
+              clientId: queuedMessage.clientId,
+              status: 'sent',
+              room_id: activeRoomRef.current
+            }
           });
         } catch (error) {
           console.error('Error syncing offline message:', error);
