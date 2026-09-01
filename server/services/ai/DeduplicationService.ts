@@ -14,12 +14,25 @@ const SYNONYM_MAP: Record<string, string> = {
   code: 'create',
   write: 'create',
   setup: 'create',
+  produce: 'create',
+  work: 'create',
+  finish: 'finish',
+  complete: 'finish',
+  done: 'finish',
+  prepare: 'prepare',
+  draft: 'prepare',
+  compile: 'prepare',
+  update: 'update',
+  revise: 'update',
+  modify: 'update',
+  change: 'update',
+  edit: 'update',
   conduct: 'conduct',
-  prepare: 'conduct',
   organize: 'conduct',
   run: 'conduct',
   hold: 'conduct',
   take: 'conduct',
+  host: 'conduct',
   pay: 'pay',
   clear: 'pay',
   settle: 'pay',
@@ -37,6 +50,9 @@ const SYNONYM_MAP: Record<string, string> = {
   tests: 'test',
   notes: 'note',
   note: 'note',
+  docs: 'docs',
+  documentation: 'docs',
+  doc: 'docs',
 };
 
 const STOP_WORDS = new Set([
@@ -47,12 +63,24 @@ const STOP_WORDS = new Set([
   'about', 'time', 'soon', 'today', 'tomorrow', 'next'
 ]);
 
+function preprocessPhrases(text: string): string {
+  if (!text) return '';
+  let lower = text.toLowerCase();
+  lower = lower.replace(/\bapi\s+docs?\b|\bapi\s+documentation\b/g, 'api_docs');
+  lower = lower.replace(/\bfrontend\s+docs?\b|\bfrontend\s+documentation\b/g, 'frontend_docs');
+  lower = lower.replace(/\bbackend\s+docs?\b|\bbackend\s+documentation\b/g, 'backend_docs');
+  lower = lower.replace(/\b(database|db)\s+schema\b/g, 'db_schema');
+  lower = lower.replace(/\b(presentation|slides|deck)\b/g, 'presentation');
+  return lower;
+}
+
 /**
  * Normalizes text: lowercases, removes punctuation, maps synonyms, removes stop words.
  */
 export function normalizeText(text: string): string {
   if (!text) return '';
-  const cleaned = text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
+  const preprocessed = preprocessPhrases(text);
+  const cleaned = preprocessed.replace(/[^a-z0-9_\s]/g, ' ');
   const tokens = cleaned
     .split(/\s+/)
     .filter((token) => token.length > 0 && !STOP_WORDS.has(token))
@@ -66,7 +94,8 @@ export function normalizeText(text: string): string {
  */
 export function extractTokenSet(text: string): Set<string> {
   if (!text) return new Set();
-  const cleaned = text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
+  const preprocessed = preprocessPhrases(text);
+  const cleaned = preprocessed.replace(/[^a-z0-9_\s]/g, ' ');
   const tokens = cleaned
     .split(/\s+/)
     .filter((token) => token.length > 0 && !STOP_WORDS.has(token))
@@ -109,17 +138,20 @@ export function calculateJaccardSimilarity(setA: Set<string>, setB: Set<string>)
  */
 export function areTasksSimilar(
   taskA: { title: string; assigned_to_name?: string | null; assignedTo?: string | null; deadline?: string | Date | null },
-  taskB: { title: string; assigned_to_name?: string | null; assignedTo?: string | null; deadline?: string | Date | null }
+  taskB: { title: string; assigned_to_name?: string | null; assignedTo?: string | null; deadline?: string | Date | null },
+  options?: { allowReassignment?: boolean; ignoreDeadline?: boolean }
 ): boolean {
   // 1. Assignee check: if both have explicit assignees and they differ, they are distinct tasks!
-  const assigneeA = (taskA.assigned_to_name || taskA.assignedTo || '').trim().toLowerCase();
-  const assigneeB = (taskB.assigned_to_name || taskB.assignedTo || '').trim().toLowerCase();
-  if (assigneeA && assigneeB && assigneeA !== assigneeB) {
-    return false;
+  if (!options?.allowReassignment) {
+    const assigneeA = (taskA.assigned_to_name || taskA.assignedTo || '').trim().toLowerCase();
+    const assigneeB = (taskB.assigned_to_name || taskB.assignedTo || '').trim().toLowerCase();
+    if (assigneeA && assigneeB && assigneeA !== assigneeB) {
+      return false;
+    }
   }
 
   // 2. Deadline check: if both have deadlines and they differ by > 24 hours, they materially differ!
-  if (taskA.deadline && taskB.deadline) {
+  if (!options?.ignoreDeadline && taskA.deadline && taskB.deadline) {
     const dA = new Date(taskA.deadline).getTime();
     const dB = new Date(taskB.deadline).getTime();
     if (!isNaN(dA) && !isNaN(dB)) {

@@ -50,10 +50,19 @@ export async function withGroqRetry<T>(
       
       let delay = 1000 * Math.pow(2, attempt - 1);
       if (isRateLimit) {
-        // If rate limit specifies a retry time, extract it, otherwise default to 5s
-        const match = error.message?.match(/try again in ([\d.]+)\s*s/i) || error.message?.match(/Please retry in ([\d.]+)\s*s/i);
-        const seconds = match ? parseFloat(match[1]) : 5;
-        delay = Math.ceil(seconds + 0.5) * 1000;
+        let seconds = 5;
+        const retryHeader = error.headers?.get?.('retry-after');
+        if (retryHeader) {
+          seconds = parseFloat(retryHeader) || 5;
+        } else if (error.message) {
+          const match = error.message.match(/try again in (?:(\d+)m)?([\d.]+)\s*s/i) || error.message.match(/retry in (?:(\d+)m)?([\d.]+)\s*s/i);
+          if (match) {
+            const mins = match[1] ? parseInt(match[1], 10) : 0;
+            const secs = parseFloat(match[2]);
+            seconds = mins * 60 + secs;
+          }
+        }
+        delay = Math.min(Math.ceil(seconds + 1) * 1000, 30000);
         logger.warn("GROQ-CLIENT", `Rate limited. Retrying in ${delay}ms...`);
       } else if (isAbort) {
         logger.warn("GROQ-CLIENT", `Request timed out after ${timeoutMs}ms. Retrying in ${delay}ms...`);

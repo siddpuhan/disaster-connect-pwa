@@ -235,15 +235,31 @@ export default function ChatPage() {
 
   useEffect(() => {
     let socket;
+    let authSubscription;
+
     const initSocket = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const currentToken = session?.access_token || (process.env.NODE_ENV === 'development' ? 'mock-development-token' : null);
+
+      if (!currentToken && process.env.NODE_ENV !== 'development') {
+        console.warn('[SOCKET] No authentication session token available — socket connection deferred.');
+        return;
+      }
+
+      if (socketRef.current?.connected) {
+        return;
+      }
+
       socket = io(SOCKET_URL, {
         // Use a function so Socket.IO fetches a FRESH token on every
         // connection / reconnection attempt — avoids the expired-token error.
         auth: (cb) => {
           supabase.auth.getSession().then(({ data: { session } }) => {
-            cb({ token: session?.access_token ?? null });
+            const token = session?.access_token || (process.env.NODE_ENV === 'development' ? 'mock-development-token' : null);
+            cb({ token });
           }).catch(() => {
-            cb({ token: null });
+            const fallbackToken = process.env.NODE_ENV === 'development' ? 'mock-development-token' : null;
+            cb({ token: fallbackToken });
           });
         },
         transports: ['websocket', 'polling'],
@@ -274,9 +290,8 @@ export default function ChatPage() {
         if (msg.includes('websocket error') || msg.includes('ECONNREFUSED') || msg.includes('Failed to fetch')) {
           console.warn('[SOCKET] Server unreachable — will retry connecting. Make sure the backend is running on port 5000.');
         } else if (msg.includes('Authentication error') || msg.includes('token')) {
-          console.error('[SOCKET] Authentication error:', msg);
-          if (socket.active) {
-            console.log('[SOCKET] Auth error — disconnecting to trigger reconnect with fresh token');
+          console.warn('[SOCKET] Authentication status:', msg);
+          if (socket?.active) {
             socket.disconnect();
           }
         } else {
@@ -320,7 +335,17 @@ export default function ChatPage() {
 
     initSocket();
 
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.access_token) {
+        if (!socketRef.current || !socketRef.current.connected) {
+          initSocket();
+        }
+      }
+    });
+    authSubscription = subscription;
+
     return () => {
+      if (authSubscription) authSubscription.unsubscribe();
       if (socketRef.current) {
         socketRef.current.off('receive_message');
         socketRef.current.off('message-delivered');
@@ -468,10 +493,11 @@ useEffect(() => {
         const allMessages = await fetchMessagesApi(token, activeRoom);
         setMessages((prev) => mergeMessages(allMessages, prev));
       } catch (error) {
-        console.error('Error fetching messages:', error);
         if (error.message?.includes('Cannot connect to server') || error.message?.includes('Failed to fetch')) {
+          console.warn('[API] Backend server on port 5000 is not reachable:', error.message);
           setMessageError('Cannot connect to the server. Make sure the backend is running on port 5000.');
         } else {
+          console.error('Failed to load messages:', error);
           setMessageError('Failed to load messages');
         }
       } finally {

@@ -50,6 +50,9 @@ export const createMessage = async (req, res) => {
     let newMessage = (result.rows[0] as unknown) as MessageRow | undefined;
 
     console.log(`[DB] MESSAGE_SAVED | ID: ${newMessage?.id || id} | Room: ${finalRoomId} | Status: Saved to DB`);
+    if (finalRoomId && newMessage) {
+      console.log(`[AI_DEBUG] MESSAGE_CREATED\nroom=${finalRoomId}\nmessage=${newMessage.id}`);
+    }
 
     if (!newMessage && id) {
       const fetchQuery = `SELECT id, text, sender_id, sender_name, room_id, created_at FROM messages WHERE id = $1`;
@@ -65,7 +68,7 @@ export const createMessage = async (req, res) => {
     // Unified AI Pipeline: enqueue message for AI processing (same as Socket.IO path)
     const io: Server = req.app.get('io');
     if (io && finalRoomId && newMessage) {
-      console.log('[PIPELINE] Enqueueing message for AI processing via REST path');
+      console.log(`[AI_DEBUG] WORKER_SCHEDULED\nroom=${finalRoomId}`);
       AIWorker.enqueueMessage(finalRoomId, {
         id: newMessage.id,
         text: trimmedText,

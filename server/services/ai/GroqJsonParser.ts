@@ -7,6 +7,8 @@ export interface ExtractedTask {
   deadline: string | null;
   confidence: number;
   source_message_id?: string;
+  is_update?: boolean;
+  update_type?: 'reassignment' | 'deadline_change' | 'confirmation' | 'general' | null;
 }
 
 export interface ExtractedNote {
@@ -58,7 +60,9 @@ export class GroqJsonParser {
           priority: ['low', 'medium', 'high', 'urgent'].includes(t.priority) ? t.priority : 'medium',
           deadline: typeof t.deadline === 'string' ? t.deadline : null,
           confidence: typeof t.confidence === 'number' ? t.confidence : 0.8,
-          source_message_id: typeof t.source_message_id === 'string' ? t.source_message_id.trim() : undefined
+          source_message_id: typeof t.source_message_id === 'string' ? t.source_message_id.trim() : undefined,
+          is_update: typeof t.is_update === 'boolean' ? t.is_update : false,
+          update_type: typeof t.update_type === 'string' ? t.update_type.trim() : null
         })) : [],
         
         notes: Array.isArray(parsed.notes) ? parsed.notes.map((n: any) => ({

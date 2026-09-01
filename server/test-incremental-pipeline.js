@@ -209,6 +209,139 @@ async function runTests() {
     const sidTask = finalTasks.find((t) => t.title.toLowerCase().includes("siddharth") || t.title.toLowerCase().includes("ci/cd"));
     assert(!!sidTask, "New unrelated task created cleanly alongside existing workspace state");
 
+    // ───────────────────────────────────────────────────────────────────────
+    // TEST 5: REQUIRED TEST CASES (A through L)
+    // ───────────────────────────────────────────────────────────────────────
+    console.log("\n--- TEST 5: Required Pipeline Test Cases (A through L) ---");
+
+    // Case A: Explicit assignment
+    console.log("[Case A] Explicit assignment");
+    const roomA = `test-room-A-${Date.now()}`;
+    await pool.query(`INSERT INTO messages (room_id, text, sender_name, created_at) VALUES ($1, $2, $3, NOW())`, [roomA, "Rahul, prepare the presentation.", "Siddharth"]);
+    await AIWorker.processBurst(roomA, null, mockIo);
+    const tasksA = await TaskService.getTasksByRoom(roomA);
+    const rahulTaskA = tasksA.find(t => t.assigned_to_name === "Rahul" || t.title.toLowerCase().includes("presentation"));
+    assert(tasksA.length === 1 && rahulTaskA?.assigned_to_name === "Rahul", "Explicit assignment created 1 task assigned to Rahul");
+
+    // Case B: Self assignment
+    console.log("[Case B] Self assignment");
+    const roomB = `test-room-B-${Date.now()}`;
+    await pool.query(`INSERT INTO messages (room_id, text, sender_name, created_at) VALUES ($1, $2, $3, NOW())`, [roomB, "I'll prepare the presentation.", "Siddharth"]);
+    await AIWorker.processBurst(roomB, null, mockIo);
+    const tasksB = await TaskService.getTasksByRoom(roomB);
+    const speakerTaskB = tasksB.find(t => t.assigned_to_name === "Siddharth" || t.title.toLowerCase().includes("presentation"));
+    assert(tasksB.length === 1 && speakerTaskB?.assigned_to_name === "Siddharth", "Self assignment created 1 task assigned to speaker (Siddharth)");
+
+    // Case C: Question
+    console.log("[Case C] Question");
+    const roomC = `test-room-C-${Date.now()}`;
+    await pool.query(`INSERT INTO messages (room_id, text, sender_name, created_at) VALUES ($1, $2, $3, NOW())`, [roomC, "Should Rahul prepare the presentation?", "Siddharth"]);
+    await AIWorker.processBurst(roomC, null, mockIo);
+    const tasksC = await TaskService.getTasksByRoom(roomC);
+    assert(tasksC.length === 0, "Question resulted in 0 tasks");
+
+    // Case D: Suggestion
+    console.log("[Case D] Suggestion");
+    const roomD = `test-room-D-${Date.now()}`;
+    await pool.query(`INSERT INTO messages (room_id, text, sender_name, created_at) VALUES ($1, $2, $3, NOW())`, [roomD, "Maybe Rahul should prepare the presentation.", "Siddharth"]);
+    await AIWorker.processBurst(roomD, null, mockIo);
+    const tasksD = await TaskService.getTasksByRoom(roomD);
+    assert(tasksD.length === 0, "Suggestion resulted in 0 tasks");
+
+    // Case E: Same task paraphrase
+    console.log("[Case E] Same task paraphrase");
+    const roomE = `test-room-E-${Date.now()}`;
+    const tE = new Date();
+    await pool.query(`INSERT INTO messages (room_id, text, sender_name, created_at) VALUES ($1, $2, $3, $4)`, [roomE, "Create API docs.", "Rahul", new Date(tE.getTime() + 1000)]);
+    await AIWorker.processBurst(roomE, null, mockIo);
+    await pool.query(`INSERT INTO messages (room_id, text, sender_name, created_at) VALUES ($1, $2, $3, $4)`, [roomE, "Work on API documentation.", "Rahul", new Date(tE.getTime() + 2000)]);
+    await AIWorker.processBurst(roomE, null, mockIo);
+    await pool.query(`INSERT INTO messages (room_id, text, sender_name, created_at) VALUES ($1, $2, $3, $4)`, [roomE, "Finish API docs.", "Rahul", new Date(tE.getTime() + 3000)]);
+    await AIWorker.processBurst(roomE, null, mockIo);
+    const tasksE = await TaskService.getTasksByRoom(roomE);
+    assert(tasksE.length === 1, `Paraphrased messages merged into 1 task (got ${tasksE.length})`);
+
+    // Case F: Deadline update
+    console.log("[Case F] Deadline update");
+    const roomF = `test-room-F-${Date.now()}`;
+    const tF = new Date();
+    await pool.query(`INSERT INTO messages (room_id, text, sender_name, created_at) VALUES ($1, $2, $3, $4)`, [roomF, "Rahul, finish the API docs by Friday.", "Siddharth", new Date(tF.getTime() + 1000)]);
+    await AIWorker.processBurst(roomF, null, mockIo);
+    await pool.query(`INSERT INTO messages (room_id, text, sender_name, created_at) VALUES ($1, $2, $3, $4)`, [roomF, "Actually, make that Monday.", "Siddharth", new Date(tF.getTime() + 2000)]);
+    await AIWorker.processBurst(roomF, null, mockIo);
+    const tasksF = await TaskService.getTasksByRoom(roomF);
+    assert(tasksF.length === 1 && tasksF[0].deadline !== null, `Deadline update resulted in 1 task with updated deadline (got ${tasksF.length})`);
+
+    // Case G: Different assignees
+    console.log("[Case G] Different assignees");
+    const roomG = `test-room-G-${Date.now()}`;
+    const tG = new Date();
+    await pool.query(`INSERT INTO messages (room_id, text, sender_name, created_at) VALUES ($1, $2, $3, $4)`, [roomG, "Rahul, prepare the frontend documentation.", "Siddharth", new Date(tG.getTime() + 1000)]);
+    await pool.query(`INSERT INTO messages (room_id, text, sender_name, created_at) VALUES ($1, $2, $3, $4)`, [roomG, "Anshika, prepare the backend documentation.", "Siddharth", new Date(tG.getTime() + 2000)]);
+    await AIWorker.processBurst(roomG, null, mockIo);
+    const tasksG = await TaskService.getTasksByRoom(roomG);
+    assert(tasksG.length === 2, `Different assignees for distinct components created 2 tasks (got ${tasksG.length})`);
+
+    // Case H: Reassignment
+    console.log("[Case H] Reassignment");
+    const roomH = `test-room-H-${Date.now()}`;
+    const tH = new Date();
+    await pool.query(`INSERT INTO messages (room_id, text, sender_name, created_at) VALUES ($1, $2, $3, $4)`, [roomH, "Rahul, prepare the presentation.", "Siddharth", new Date(tH.getTime() + 1000)]);
+    await AIWorker.processBurst(roomH, null, mockIo);
+    await pool.query(`INSERT INTO messages (room_id, text, sender_name, created_at) VALUES ($1, $2, $3, $4)`, [roomH, "Actually Anshika will handle the presentation.", "Siddharth", new Date(tH.getTime() + 2000)]);
+    await AIWorker.processBurst(roomH, null, mockIo);
+    const tasksH = await TaskService.getTasksByRoom(roomH);
+    const activeAssignee = tasksH[0]?.assigned_to_name;
+    assert(tasksH.length === 1 && activeAssignee === "Anshika", `Reassignment resulted in 1 task assigned to Anshika (got count ${tasksH.length}, assigned to ${activeAssignee})`);
+
+    // Case I: Task vs reminder
+    console.log("[Case I] Task vs reminder");
+    const roomI = `test-room-I-${Date.now()}`;
+    await pool.query(`INSERT INTO messages (room_id, text, sender_name, created_at) VALUES ($1, $2, $3, NOW())`, [roomI, "I'll announce the decision tomorrow.", "Siddharth"]);
+    await AIWorker.processBurst(roomI, null, mockIo);
+    const tasksI = await TaskService.getTasksByRoom(roomI);
+    const notesI = (await pool.query(`SELECT * FROM notes WHERE room_id = $1`, [roomI])).rows;
+    assert(tasksI.length === 1 && notesI.filter(n => n.type === 'Reminder').length === 0, "Action commitment created TASK, not Reminder");
+
+    const roomI2 = `test-room-I2-${Date.now()}`;
+    await pool.query(`INSERT INTO messages (room_id, text, sender_name, created_at) VALUES ($1, $2, $3, NOW())`, [roomI2, "Don't forget that the meeting is tomorrow.", "Siddharth"]);
+    await AIWorker.processBurst(roomI2, null, mockIo);
+    const tasksI2 = await TaskService.getTasksByRoom(roomI2);
+    const notesI2 = (await pool.query(`SELECT * FROM notes WHERE room_id = $1`, [roomI2])).rows;
+    assert(tasksI2.length === 0 && notesI2.some(n => n.type === 'Reminder'), "Memory reminder created REMINDER note, not Task");
+
+    // Case J: Confirmation
+    console.log("[Case J] Confirmation");
+    const roomJ = `test-room-J-${Date.now()}`;
+    const tJ = new Date();
+    await pool.query(`INSERT INTO messages (room_id, text, sender_name, created_at) VALUES ($1, $2, $3, $4)`, [roomJ, "Rahul, prepare the presentation.", "Siddharth", new Date(tJ.getTime() + 1000)]);
+    await AIWorker.processBurst(roomJ, null, mockIo);
+    await pool.query(`INSERT INTO messages (room_id, text, sender_name, created_at) VALUES ($1, $2, $3, $4)`, [roomJ, "Sure, I'll do it.", "Rahul", new Date(tJ.getTime() + 2000)]);
+    await AIWorker.processBurst(roomJ, null, mockIo);
+    const tasksJ = await TaskService.getTasksByRoom(roomJ);
+    assert(tasksJ.length === 1, `Conversational confirmation confirmed existing task without creating duplicate (got ${tasksJ.length})`);
+
+    // Case K: No-action conversation
+    console.log("[Case K] No-action conversation");
+    const roomK = `test-room-K-${Date.now()}`;
+    await pool.query(`INSERT INTO messages (room_id, text, sender_name, created_at) VALUES ($1, $2, $3, NOW())`, [roomK, "Yeah, sounds good.", "Rahul"]);
+    await AIWorker.processBurst(roomK, null, mockIo);
+    const tasksK = await TaskService.getTasksByRoom(roomK);
+    assert(tasksK.length === 0, "No-action conversation produced 0 tasks");
+
+    // Case L: Existing historical task + new conversational context
+    console.log("[Case L] Historical task + new conversational context");
+    const roomL = `test-room-L-${Date.now()}`;
+    const tL = new Date();
+    await pool.query(`INSERT INTO messages (room_id, text, sender_name, created_at) VALUES ($1, $2, $3, $4)`, [roomL, "Mohit will coordinate team projects.", "Mohit", new Date(tL.getTime() + 1000)]);
+    await AIWorker.processBurst(roomL, null, mockIo);
+    const initialTasksL = await TaskService.getTasksByRoom(roomL);
+
+    await pool.query(`INSERT INTO messages (room_id, text, sender_name, created_at) VALUES ($1, $2, $3, $4)`, [roomL, "What time is the meeting tomorrow?", "Siddharth", new Date(tL.getTime() + 2000)]);
+    await AIWorker.processBurst(roomL, null, mockIo);
+    const finalTasksL = await TaskService.getTasksByRoom(roomL);
+    assert(finalTasksL.length === initialTasksL.length, "New conversational context did not duplicate historical task");
+
     console.log("\n==========================================================");
     console.log(`  Test Results: ${passedCount} PASSED, ${failedCount} FAILED`);
     console.log("==========================================================\n");

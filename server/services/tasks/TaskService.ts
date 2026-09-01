@@ -13,7 +13,8 @@ export class TaskService {
     title: string,
     assignedTo?: string | null,
     deadline?: string | Date | null,
-    client?: any
+    client?: any,
+    options?: { isUpdate?: boolean; updateType?: string | null }
   ) {
     const db = client || getDB();
     const result = await db.query(
@@ -22,6 +23,36 @@ export class TaskService {
     );
 
     const candidates = result.rows;
+
+    // 1. If explicitly marked as an update or has updateType, try matching title allowing reassignment & deadline change
+    if (options?.isUpdate || options?.updateType) {
+      for (const candidate of candidates) {
+        if (
+          areTasksSimilar(
+            { title, assignedTo, deadline },
+            { title: candidate.title, assigned_to_name: candidate.assigned_to_name, deadline: candidate.deadline },
+            { allowReassignment: true, ignoreDeadline: true }
+          )
+        ) {
+          return candidate;
+        }
+      }
+    }
+
+    // 2. Try matching allowing deadline changes when title & assignee match
+    for (const candidate of candidates) {
+      if (
+        areTasksSimilar(
+          { title, assignedTo, deadline },
+          { title: candidate.title, assigned_to_name: candidate.assigned_to_name, deadline: candidate.deadline },
+          { ignoreDeadline: true }
+        )
+      ) {
+        return candidate;
+      }
+    }
+
+    // 3. Strict match check
     for (const candidate of candidates) {
       if (
         areTasksSimilar(
@@ -32,6 +63,7 @@ export class TaskService {
         return candidate;
       }
     }
+
     return null;
   }
 
@@ -73,10 +105,12 @@ export class TaskService {
       deadline,
       confidence,
       aiGenerated,
-      createdBy
+      createdBy,
+      isUpdate,
+      updateType
     } = taskData;
 
-    const existing = await this.findMatchingTask(roomId, title, assignedTo, deadline, db);
+    const existing = await this.findMatchingTask(roomId, title, assignedTo, deadline, db, { isUpdate, updateType });
 
     if (existing) {
       // UPDATE existing task with merged fields
@@ -100,6 +134,11 @@ export class TaskService {
         await this.recordSource(updatedTask.id, sourceMessageId, db);
       }
       return { task: updatedTask, action: 'updated' as const };
+    }
+
+    // If marked as an update/confirmation but no matching historical task exists in room, skip duplicate creation
+    if (isUpdate && (updateType === 'confirmation' || updateType === 'reassignment' || updateType === 'deadline_change')) {
+      return { task: null, action: 'skipped' as const };
     }
 
     // CREATE new task
