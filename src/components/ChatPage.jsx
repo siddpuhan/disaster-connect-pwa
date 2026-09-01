@@ -873,10 +873,29 @@ useEffect(() => {
                     messages.map((msg, idx) => {
                       const isMine = msg.sender_id === currentUserId;
                       const prevMsg = idx > 0 ? messages[idx - 1] : null;
-                      const groupedWithPrev = prevMsg &&
-                        prevMsg.sender_id === msg.sender_id &&
-                        !msg.isStreaming && !prevMsg.isStreaming &&
-                        new Date(msg.created_at || msg.timestamp) - new Date(prevMsg.created_at || prevMsg.timestamp) < 120000;
+                      const getMsgTime = (m) => {
+                        if (!m) return null;
+                        const raw = m.created_at || m.timestamp;
+                        if (!raw) return null;
+                        const t = new Date(raw).getTime();
+                        return isNaN(t) ? null : t;
+                      };
+                      const tMsg = getMsgTime(msg);
+                      const tPrev = getMsgTime(prevMsg);
+                      const isRecent = (tMsg !== null && tPrev !== null) ? Math.abs(tMsg - tPrev) < 120000 : true;
+                      const isSameSender = Boolean(
+                        prevMsg && (
+                          (msg.sender_id && prevMsg.sender_id && msg.sender_id === prevMsg.sender_id) ||
+                          (msg.sender_name && prevMsg.sender_name && msg.sender_name === prevMsg.sender_name)
+                        )
+                      );
+                      const groupedWithPrev = Boolean(
+                        prevMsg &&
+                        isSameSender &&
+                        !msg.isStreaming &&
+                        !prevMsg.isStreaming &&
+                        isRecent
+                      );
                       return (
                         <MessageBubble
                           key={msg.id ?? `${msg.created_at || msg.timestamp}-${msg.text}`}
