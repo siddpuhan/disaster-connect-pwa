@@ -128,7 +128,11 @@ export default function ChatPage() {
             })
           });
         } catch (error) {
-          console.error('Failed to sync user to database:', error);
+          if (error instanceof TypeError && error.message === 'Failed to fetch') {
+            console.warn('Backend server not reachable — user sync skipped. Start the server on port 5000.');
+          } else {
+            console.error('Failed to sync user to database:', error);
+          }
         }
       };
        syncUserToDB();
@@ -231,14 +235,39 @@ export default function ChatPage() {
 
   useEffect(() => {
     let socket;
+    let authSubscription;
+
     const initSocket = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token ?? null;
+      const currentToken = session?.access_token || (process.env.NODE_ENV === 'development' ? 'mock-development-token' : null);
+
+      if (!currentToken && process.env.NODE_ENV !== 'development') {
+        console.warn('[SOCKET] No authentication session token available — socket connection deferred.');
+        return;
+      }
+
+      if (socketRef.current?.connected) {
+        return;
+      }
+
       socket = io(SOCKET_URL, {
-        auth: { token },
-        transports: ['websocket'],
-        reconnectionAttempts: 10,
-        reconnectionDelay: 1000
+        // Use a function so Socket.IO fetches a FRESH token on every
+        // connection / reconnection attempt — avoids the expired-token error.
+        auth: (cb) => {
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            const token = session?.access_token || (process.env.NODE_ENV === 'development' ? 'mock-development-token' : null);
+            cb({ token });
+          }).catch(() => {
+            const fallbackToken = process.env.NODE_ENV === 'development' ? 'mock-development-token' : null;
+            cb({ token: fallbackToken });
+          });
+        },
+        transports: ['websocket', 'polling'],
+        withCredentials: true,
+        reconnectionAttempts: 15,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 10000,
+        timeout: 15000
       });
       socketRef.current = socket;
 
@@ -257,12 +286,44 @@ export default function ChatPage() {
       }
 
       socket.on('connect_error', (error) => {
-        console.error('Socket connection error:', error);
+        const msg = error.message || String(error);
+        if (msg.includes('websocket error') || msg.includes('ECONNREFUSED') || msg.includes('Failed to fetch')) {
+          console.warn('[SOCKET] Server unreachable — will retry connecting. Make sure the backend is running on port 5000.');
+        } else if (msg.includes('Authentication error') || msg.includes('token')) {
+          console.warn('[SOCKET] Authentication status:', msg);
+          if (socket?.active) {
+            socket.disconnect();
+          }
+        } else {
+          console.warn('[SOCKET] Connection error:', msg);
+        }
       });
 
-      socket.on('disconnect', () => {
-        console.log('[SOCKET] Disconnected');
+      socket.on('disconnect', (reason) => {
+        console.log('[SOCKET] ⚠️ Disconnected:', reason);
         setSocketInstance(null);
+        // If the server forcefully disconnected us, manually reconnect
+        if (reason === 'io server disconnect') {
+          socket.connect();
+        }
+      });
+
+      socket.on('reconnect', (attemptNumber) => {
+        console.log('[SOCKET] ✅ Reconnected after', attemptNumber, 'attempts');
+        setSocketInstance(socket);
+        // Re-join room after reconnection
+        if (activeRoomRef.current) {
+          socket.emit('join-room', activeRoomRef.current);
+          console.log('[SOCKET] Re-joined room after reconnect:', activeRoomRef.current);
+        }
+      });
+
+      socket.on('reconnect_attempt', (attemptNumber) => {
+        console.log('[SOCKET] 🔄 Reconnection attempt #' + attemptNumber);
+      });
+
+      socket.on('reconnect_error', (error) => {
+        console.warn('[SOCKET] Reconnection attempt failed:', error.message);
       });
 
       socket.on('message-delivered', ({ clientId }) => {
@@ -274,12 +335,26 @@ export default function ChatPage() {
 
     initSocket();
 
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.access_token) {
+        if (!socketRef.current || !socketRef.current.connected) {
+          initSocket();
+        }
+      }
+    });
+    authSubscription = subscription;
+
     return () => {
+      if (authSubscription) authSubscription.unsubscribe();
       if (socketRef.current) {
         socketRef.current.off('receive_message');
         socketRef.current.off('message-delivered');
         socketRef.current.off('connect');
         socketRef.current.off('disconnect');
+        socketRef.current.off('connect_error');
+        socketRef.current.off('reconnect');
+        socketRef.current.off('reconnect_attempt');
+        socketRef.current.off('reconnect_error');
         socketRef.current.disconnect();
         socketRef.current = null;
         setSocketInstance(null);
@@ -418,8 +493,13 @@ useEffect(() => {
         const allMessages = await fetchMessagesApi(token, activeRoom);
         setMessages((prev) => mergeMessages(allMessages, prev));
       } catch (error) {
-        console.error('Error fetching messages:', error);
-        setMessageError('Failed to load messages');
+        if (error.message?.includes('Cannot connect to server') || error.message?.includes('Failed to fetch')) {
+          console.warn('[API] Backend server on port 5000 is not reachable:', error.message);
+          setMessageError('Cannot connect to the server. Make sure the backend is running on port 5000.');
+        } else {
+          console.error('Failed to load messages:', error);
+          setMessageError('Failed to load messages');
+        }
       } finally {
         setLoadingMessages(false);
       }
@@ -462,9 +542,13 @@ useEffect(() => {
             queuedMessage.clientId
           );
           socketRef.current?.emit('send_message', {
-            ...savedMessage,
-            clientId: queuedMessage.clientId,
-            status: 'sent',
+            roomId: activeRoomRef.current,
+            message: {
+              ...savedMessage,
+              clientId: queuedMessage.clientId,
+              status: 'sent',
+              room_id: activeRoomRef.current
+            }
           });
         } catch (error) {
           console.error('Error syncing offline message:', error);
@@ -789,10 +873,29 @@ useEffect(() => {
                     messages.map((msg, idx) => {
                       const isMine = msg.sender_id === currentUserId;
                       const prevMsg = idx > 0 ? messages[idx - 1] : null;
-                      const groupedWithPrev = prevMsg &&
-                        prevMsg.sender_id === msg.sender_id &&
-                        !msg.isStreaming && !prevMsg.isStreaming &&
-                        new Date(msg.created_at || msg.timestamp) - new Date(prevMsg.created_at || prevMsg.timestamp) < 120000;
+                      const getMsgTime = (m) => {
+                        if (!m) return null;
+                        const raw = m.created_at || m.timestamp;
+                        if (!raw) return null;
+                        const t = new Date(raw).getTime();
+                        return isNaN(t) ? null : t;
+                      };
+                      const tMsg = getMsgTime(msg);
+                      const tPrev = getMsgTime(prevMsg);
+                      const isRecent = (tMsg !== null && tPrev !== null) ? Math.abs(tMsg - tPrev) < 120000 : true;
+                      const isSameSender = Boolean(
+                        prevMsg && (
+                          (msg.sender_id && prevMsg.sender_id && msg.sender_id === prevMsg.sender_id) ||
+                          (msg.sender_name && prevMsg.sender_name && msg.sender_name === prevMsg.sender_name)
+                        )
+                      );
+                      const groupedWithPrev = Boolean(
+                        prevMsg &&
+                        isSameSender &&
+                        !msg.isStreaming &&
+                        !prevMsg.isStreaming &&
+                        isRecent
+                      );
                       return (
                         <MessageBubble
                           key={msg.id ?? `${msg.created_at || msg.timestamp}-${msg.text}`}

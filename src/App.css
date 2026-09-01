@@ -658,7 +658,7 @@ body {
   padding: 36px 0 24px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
 }
@@ -676,26 +676,34 @@ body {
   overflow-wrap: break-word;
   word-break: break-word;
   hyphens: auto;
+  margin-top: 16px;
+}
+
+.message-bubble:first-child {
+  margin-top: 0;
 }
 
 /* Grouped messages */
 .message-bubble.grouped-with-prev {
-  margin-top: 2px;
+  margin-top: 6px !important;
 }
 
 .message-bubble.grouped-with-prev .avatar {
   visibility: hidden;
-  width: 0;
-  min-width: 0;
+  opacity: 0;
+  pointer-events: none;
+  width: 32px;
+  min-width: 32px;
+  height: 0;
   margin: 0;
-  overflow: hidden;
+  padding: 0;
   border: none;
   box-shadow: none;
-  padding: 0;
+  overflow: hidden;
 }
 
 .message-bubble.grouped-with-prev .message-sender-name {
-  display: none;
+  display: none !important;
 }
 
 /* Avatar */

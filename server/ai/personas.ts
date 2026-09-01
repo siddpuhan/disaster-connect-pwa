@@ -17,7 +17,7 @@ export const PERSONA_REGISTRY = {
     role: `You are a senior software architect. You review code rigorously, focus on scalability, and suggest robust design patterns.\n${FORMATTING_RULES}`,
     color: "text-blue-500",
     icon: "code-bracket",
-    model: "llama-3.3-70b-versatile"
+    model: "openai/gpt-oss-120b"
   },
   designer: {
     id: "designer",
@@ -26,7 +26,7 @@ export const PERSONA_REGISTRY = {
     role: `You are a senior UI/UX designer. You focus on design systems, brutalist/modern aesthetics, typography, and frontend polish.\n${FORMATTING_RULES}`,
     color: "text-pink-500",
     icon: "paint-brush",
-    model: "llama-3.3-70b-versatile"
+    model: "openai/gpt-oss-120b"
   },
   security: {
     id: "security",
@@ -35,7 +35,7 @@ export const PERSONA_REGISTRY = {
     role: `You are a cybersecurity engineer. Analyze the context for vulnerabilities, suggest auth improvements, and prioritize OWASP top 10 best practices.\n${FORMATTING_RULES}`,
     color: "text-red-500",
     icon: "shield-check",
-    model: "llama-3.3-70b-versatile"
+    model: "openai/gpt-oss-120b"
   },
   pm: {
     id: "pm",
@@ -44,7 +44,7 @@ export const PERSONA_REGISTRY = {
     role: `You are a pragmatic product manager. Focus on feature prioritization, MVP scope, roadmaps, and business value. Help the team ship faster.\n${FORMATTING_RULES}`,
     color: "text-yellow-500",
     icon: "briefcase",
-    model: "llama-3.3-70b-versatile"
+    model: "openai/gpt-oss-120b"
   },
   mentor: {
     id: "mentor",
@@ -53,7 +53,7 @@ export const PERSONA_REGISTRY = {
     role: `You are a patient teacher. Explain complex concepts deeply using simple analogies. Never give just the answer; guide the user to understand the 'why'.\n${FORMATTING_RULES}`,
     color: "text-green-500",
     icon: "academic-cap",
-    model: "llama-3.3-70b-versatile"
+    model: "openai/gpt-oss-120b"
   },
   debugger: {
     id: "debugger",
@@ -62,7 +62,7 @@ export const PERSONA_REGISTRY = {
     role: `You are a debugging specialist. You investigate errors meticulously. Ask clarifying questions if logs are missing, and provide step-by-step resolution paths.\n${FORMATTING_RULES}`,
     color: "text-purple-500",
     icon: "bug-ant",
-    model: "llama-3.3-70b-versatile"
+    model: "openai/gpt-oss-120b"
   },
   ai: {
     id: "ai",
@@ -71,6 +71,6 @@ export const PERSONA_REGISTRY = {
     role: `You are ThinkRoom AI, a modern collaboration assistant. Answer questions clearly, summarize context when asked, and be concise.\n${FORMATTING_RULES}`,
     color: "text-purple-400",
     icon: "sparkles",
-    model: "llama-3.3-70b-versatile"
+    model: "openai/gpt-oss-120b"
   }
 };

@@ -227,6 +227,52 @@ const connectDB = async () => {
       );
     `);
 
+    // room_ai_cursors
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS public.room_ai_cursors (
+        room_id TEXT PRIMARY KEY,
+        last_analyzed_message_id UUID REFERENCES public.messages(id) ON DELETE SET NULL,
+        last_analyzed_created_at TIMESTAMPTZ,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `);
+
+    // workspace_item_sources
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS public.workspace_item_sources (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        workspace_item_id UUID NOT NULL,
+        item_type TEXT NOT NULL CHECK (item_type IN ('task', 'note', 'document')),
+        message_id UUID NOT NULL REFERENCES public.messages(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (workspace_item_id, message_id)
+      );
+    `);
+
+    // alter notes and documents to ensure source_message_id exists
+    await client.query(`ALTER TABLE public.notes ADD COLUMN IF NOT EXISTS source_message_id UUID REFERENCES public.messages(id) ON DELETE SET NULL;`);
+    await client.query(`ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS source_message_id UUID REFERENCES public.messages(id) ON DELETE SET NULL;`);
+
+    // unique indexes for DB-level idempotency
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_room_source_title
+        ON public.tasks (room_id, COALESCE(source_message_id, '00000000-0000-0000-0000-000000000000'::uuid), lower(trim(title)))
+        WHERE (is_deleted = false);
+    `);
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_room_source_content
+        ON public.notes (room_id, COALESCE(source_message_id, '00000000-0000-0000-0000-000000000000'::uuid), type, lower(trim(content)))
+        WHERE (deleted_at IS NULL);
+    `);
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_room_category_title
+        ON public.documents (room_id, category, lower(trim(title)))
+        WHERE (deleted_at IS NULL);
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_workspace_item_sources_item ON public.workspace_item_sources (workspace_item_id, item_type);`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_workspace_item_sources_msg ON public.workspace_item_sources (message_id);`);
+
+
     // idempotent RLS enable
     await client.query(`ALTER TABLE IF EXISTS public.users ENABLE ROW LEVEL SECURITY;`);
     await client.query(`ALTER TABLE IF EXISTS public.summaries ENABLE ROW LEVEL SECURITY;`);

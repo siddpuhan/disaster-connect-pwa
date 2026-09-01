@@ -32,7 +32,7 @@ export async function processPersonaStream(roomId, messageId, cleanPrompt, perso
 
     // 4. Initialize Stream with Llama-3.3 on Groq
     const chatCompletionStream = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+      model: "openai/gpt-oss-120b",
       messages: [
         { role: "system", content: `${persona.role}\n\n${memoryContext}` },
         { role: "user", content: `Recent Conversation History:\n${chatHistory}\n\nUser input: ${cleanPrompt}` }

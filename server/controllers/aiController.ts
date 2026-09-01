@@ -27,7 +27,7 @@ export const processThinkRoomAI = async (roomId, userQuestion, io) => {
     const userText = userQuestion.replace('@ai', '').trim();
 
     const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+      model: "openai/gpt-oss-120b",
       messages: [
         { role: "system", content: `You are ThinkRoom AI, a helpful teammate in this chat. Use the following history to answer questions concisely.\nHistory:\n${chatHistory}` },
         { role: "user", content: userText }

@@ -973,7 +973,7 @@ When the debounce timer fires, the worker fetches:
 #### 4. Groq API Call
 ```typescript
 const completion = await groq.chat.completions.create({
-  model: "llama-3.3-70b-versatile",
+  model: "openai/gpt-oss-120b",
   messages: [systemPrompt, userPrompt],
   temperature: 0.1,        // Low temperature for consistency
   response_format: { type: "json_object" },
